@@ -178,3 +178,15 @@
   color: #fff;
   border: 2px solid var(--c-machine-light);
 }
+
+/* Hide ALL modal scrollbars */
+.modal-scroll-hidden::-webkit-scrollbar,
+.synopsis-scroll-hidden::-webkit-scrollbar {
+  display: none;
+}
+
+.modal-scroll-hidden,
+.synopsis-scroll-hidden {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

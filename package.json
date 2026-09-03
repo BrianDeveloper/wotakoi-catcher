@@ -6,12 +6,17 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "server": "node server/index.js",
+    "dev:all": "concurrently \"node server/index.js\" \"vite\""
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
     "framer-motion": "^13.2.0",
     "lucide-react": "^1.39.0",
+    "node-cron": "^4.6.0",
     "react-dom": "^19.2.8",
     "tailwindcss": "^4.3.3"
   },
@@ -19,6 +24,7 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
     "@vitejs/plugin-react": "^6.1.1",
+    "concurrently": "^10.0.5",
     "typescript": "~6.0.2",
     "vite": "^8.2.2"
   }

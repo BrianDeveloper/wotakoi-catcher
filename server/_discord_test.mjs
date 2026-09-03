@@ -1,0 +1,10 @@
+﻿import dotenv from "dotenv";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+const dir = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.join(dir, ".env") });
+const token = process.env.DISCORD_TOKEN;
+const res = await fetch("https://discord.com/api/v10/users/@me/guilds", { headers: { Authorization: `Bot ${token}` } });
+const body = await res.json();
+console.log("guilds donde está el bot:");
+for (const g of body) console.log(" -", g.id, "|", g.name);

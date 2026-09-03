@@ -13,6 +13,7 @@ interface AnimeEntry {
   id: number
   title: string
   genre: string
+  allGenres?: string
   image: string
   synopsis: string
   capsuleColor: string
@@ -90,6 +91,10 @@ const MOCK_ANIMES: AnimeEntry[] = [
 // ─── Utility ─────────────────────────────────────────────────────────────────
 
 
+
+const API_URL = 'http://localhost:4000/api/animes'
+const REFRESH_INTERVAL_MIN = 60
+const CAPSULE_LIMIT = 30
 
 const CAPSULE_RADIUS = 20
 const BOUNDS = {
@@ -184,6 +189,12 @@ function simulatePacking(count: number, initialNodes?: any[]) {
 
 function generateCapsulePositions(count: number) {
   return simulatePacking(count)
+}
+
+async function fetchAnimes(): Promise<{ animes: AnimeEntry[] }> {
+  const res = await fetch(API_URL)
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return res.json()
 }
 
 // ─── Capsule Component ────────────────────────────────────────────────────────
@@ -282,6 +293,8 @@ const modalVariants: Variants = {
 
 function CapsuleModal({ anime, onClose }: CapsuleModalProps) {
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [synopsisExpanded, setSynopsisExpanded] = useState(false)
+  const synopsisLong = anime.synopsis.length > 160
 
   return (
     <motion.div
@@ -311,11 +324,23 @@ function CapsuleModal({ anime, onClose }: CapsuleModalProps) {
           borderRadius: 24,
           width: '100%',
           maxWidth: 400,
+          maxHeight: 'calc(100vh - 40px)',
           overflow: 'hidden',
           position: 'relative',
+          display: 'flex',
+          flexDirection: 'column',
         }}
       >
-        <div style={{ padding: '24px' }}>
+        <div
+          className="modal-scroll-hidden"
+          style={{
+            padding: '24px',
+            overflowY: 'auto',
+            flex: '1 1 auto',
+            scrollbarWidth: 'none',
+          } as unknown as React.CSSProperties}
+        >
+          {/* Cover image */}
           {/* Cover image */}
           <div
             onClick={() => setIsFullscreen(true)}
@@ -375,15 +400,52 @@ function CapsuleModal({ anime, onClose }: CapsuleModalProps) {
           </div>
 
           {/* Synopsis */}
-          <p style={{
-            margin: 0,
-            fontSize: 14,
-            lineHeight: 1.6,
-            color: 'var(--c-text-light)',
-            textAlign: 'center',
-          }}>
+          <p
+            className="synopsis-scroll-hidden"
+            style={{
+              margin: 0,
+              fontSize: 14,
+              lineHeight: 1.6,
+              color: 'var(--c-text-light)',
+              textAlign: 'center',
+              ...(synopsisExpanded
+                ? {
+                    maxHeight: 160,
+                    overflowY: 'auto',
+                    paddingRight: 8,
+                    scrollbarWidth: 'none',
+                  }
+                : {
+                    display: '-webkit-box',
+                    WebkitBoxOrient: 'vertical',
+                    WebkitLineClamp: 3,
+                    overflow: 'hidden',
+                  }),
+            } as unknown as React.CSSProperties}
+          >
             {anime.synopsis}
           </p>
+
+          {synopsisLong && (
+            <div style={{ textAlign: 'center', marginTop: 8 }}>
+              <motion.button
+                whileHover={{ scale: 1.03 }}
+                whileTap={{ scale: 0.97 }}
+                onClick={() => setSynopsisExpanded((v) => !v)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: 'var(--c-accent, #f43f5e)',
+                  fontSize: 13,
+                  fontWeight: 700,
+                  padding: '4px 8px',
+                }}
+              >
+                {synopsisExpanded ? 'Ver menos' : 'Ver más'}
+              </motion.button>
+            </div>
+          )}
 
           {/* Close button */}
           <motion.button
@@ -467,6 +529,37 @@ export default function ClawMachineViewer() {
   const [remaining, setRemaining] = useState<AnimeEntry[]>([...MOCK_ANIMES])
   const [positions, setPositions] = useState<{ x: number, y: number, rotation: number }[]>(() => generateCapsulePositions(MOCK_ANIMES.length))
 
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+
+  const loadAnimes = useCallback(async () => {
+    try {
+      const data = await fetchAnimes()
+      if (data.animes && data.animes.length > 0) {
+        if (sessionStarted.current) {
+          setLoading(false)
+          return
+        }
+        const pool = data.animes.length > CAPSULE_LIMIT
+          ? [...data.animes].sort(() => Math.random() - 0.5).slice(0, CAPSULE_LIMIT)
+          : data.animes
+        setRemaining(pool)
+        setPositions(generateCapsulePositions(pool.length))
+        setLoadError(null)
+      }
+      setLoading(false)
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Error de conexión')
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadAnimes()
+    const id = window.setInterval(loadAnimes, REFRESH_INTERVAL_MIN * 60 * 1000)
+    return () => window.clearInterval(id)
+  }, [loadAnimes])
+
   const [dispensed, setDispensed] = useState<AnimeEntry | null>(null)
   const [grabbedAnime, setGrabbedAnime] = useState<AnimeEntry | null>(null)
   const [machineState, setMachineState] = useState<MachineState>('idle')
@@ -480,6 +573,7 @@ export default function ClawMachineViewer() {
   const grabbedCapsuleControls = useAnimation()
 
   const isAnimating = useRef(false)
+  const sessionStarted = useRef(false)
   const chuteX = 40 // X position of the drop chute
   const currentClawX = useRef(chuteX)
   const moveInterval = useRef<number | null>(null)
@@ -585,6 +679,7 @@ export default function ClawMachineViewer() {
       nextPositions = positions.filter((_, i) => i !== targetIndex)
       setRemaining(nextRemaining)
       setPositions(nextPositions)
+      sessionStarted.current = true
       grabbedCapsuleControls.set({ opacity: 1 }) // Show capsule in claw
     }
 
@@ -676,6 +771,21 @@ export default function ClawMachineViewer() {
           ¡Descubre tu próximo anime!
         </p>
       </div>
+
+      {/* Loading / Error states */}
+      {loading && (
+        <div style={{ textAlign: 'center', marginBottom: 20, fontWeight: 700, color: 'var(--c-text-light)' }}>
+          Cargando premios…
+        </div>
+      )}
+      {!loading && loadError && (
+        <div style={{
+          textAlign: 'center', marginBottom: 20, fontWeight: 700,
+          color: '#f87171', maxWidth: 340, fontSize: 13, lineHeight: 1.5,
+        }}>
+          {`No se pudo conectar al backend (${loadError}). Mostrando datos de demostración.`}
+        </div>
+      )}
 
       {/* Main Machine */}
       <motion.div
