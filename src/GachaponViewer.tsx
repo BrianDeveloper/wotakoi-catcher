@@ -10,89 +10,57 @@ import { Sparkles, Star } from 'lucide-react'
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface AnimeEntry {
-  id: number
+  id: string
   title: string
   genre: string
   allGenres?: string
   image: string
   synopsis: string
   capsuleColor: string
+  category?: string
+  consumedAt?: string
 }
 
-// ─── Mock Data ────────────────────────────────────────────────────────────────
+type MachineKey = 'anime' | 'movie' | 'series' | 'mix'
 
-const MOCK_ANIMES: AnimeEntry[] = [
-  {
-    id: 1,
-    title: 'Wotakoi: Love is Hard for Otaku',
-    genre: 'Romance / Slice of Life',
-    image: 'https://i.pinimg.com/736x/4b/a0/07/4ba00791177b1177080bd5e6ad5bb1a9.jpg',
-    synopsis: 'Narumi Momose, una otaku que oculta su pasión, reencuentra a su amigo de infancia Hirotaka Nifuji en su nuevo trabajo.',
-    capsuleColor: '#f43f5e',
-  },
-  {
-    id: 2,
-    title: 'Spy × Family',
-    genre: 'Acción / Comedia',
-    image: 'https://i.pinimg.com/1200x/b3/18/ea/b318ead5ef5e6e2ce91e641480723b50.jpg',
-    synopsis: 'Un espía de élite, un asesino profesional y una niña telepática forman una familia ficticia para una misión secreta.',
-    capsuleColor: '#f59e0b',
-  },
-  {
-    id: 3,
-    title: 'Violet Evergarden',
-    genre: 'Drama / Fantasía',
-    image: 'https://i.pinimg.com/1200x/56/ac/61/56ac616086a4fbad1009dbb0336ce650.jpg',
-    synopsis: 'Violet Evergarden, una ex-soldado que perdió sus brazos en la guerra, comienza a trabajar como escritora de cartas automemoria.',
-    capsuleColor: '#3b82f6',
-  },
-  {
-    id: 4,
-    title: 'Kaguya-sama: Love is War',
-    genre: 'Romance / Comedia',
-    image: 'https://i.pinimg.com/736x/05/f6/65/05f6653544ab709981778478f2a002b9.jpg',
-    synopsis: 'La presidenta del consejo estudiantil Kaguya Shinomiya y el vicepresidente Miyuki Shirogane están enamorados, pero ninguno quiere confesar primero.',
-    capsuleColor: '#ec4899',
-  },
-  {
-    id: 5,
-    title: 'Frieren: Beyond Journey\'s End',
-    genre: 'Aventura / Fantasía',
-    image: 'https://i.pinimg.com/736x/ae/b8/1e/aeb81e901a22cd9b814671e1a4007c79.jpg',
-    synopsis: 'Frieren, una maga élfica, emprende un viaje reflexionando sobre el valor del tiempo y los vínculos humanos.',
-    capsuleColor: '#8b5cf6',
-  },
-  {
-    id: 6,
-    title: 'Oshi no Ko',
-    genre: 'Drama / Misterio',
-    image: 'https://i.pinimg.com/1200x/bb/b1/e0/bbb1e09e1b7eaa2d9799b2b2a25db465.jpg',
-    synopsis: 'Tras descubrir que su madre idol fue asesinada, Aqua jura venganza mientras navega por el oscuro mundo del entretenimiento.',
-    capsuleColor: '#06b6d4',
-  },
-  {
-    id: 7,
-    title: 'Bocchi the Rock!',
-    genre: 'Música / Slice of Life',
-    image: 'https://i.pinimg.com/736x/3f/77/2d/3f772d0d8fa4c6d9885651aedcdc3fd0.jpg',
-    synopsis: 'Hitori Gotou, una chica extremadamente tímida y solitaria, sueña con ser guitarrista de rock y se une a una banda.',
-    capsuleColor: '#10b981',
-  },
-  {
-    id: 8,
-    title: 'Dungeon Meshi',
-    genre: 'Aventura / Fantasía',
-    image: 'https://i.pinimg.com/736x/46/62/c9/4662c9969b5574988a62452cb2672290.jpg',
-    synopsis: 'Laios y su grupo deciden cocinar y comer los monstruos del calabozo mientras rescatan a su hermana.',
-    capsuleColor: '#f97316',
-  },
+interface MachineDef {
+  key: MachineKey
+  label: string
+  short: string
+  emoji: string
+  accent: string
+  main: string
+  dark: string
+  light: string
+}
+
+const MACHINES: MachineDef[] = [
+  { key: 'anime', label: 'Máquina Anime', short: 'ANIME', emoji: '🍥',
+    accent: '#22d3ee', main: '#a21caf', dark: '#701a75', light: '#ec4899' },
+  { key: 'movie', label: 'Máquina Películas', short: 'PELIS', emoji: '🎬',
+    accent: '#f59e0b', main: '#991b1b', dark: '#7f1d1d', light: '#fbbf24' },
+  { key: 'series', label: 'Máquina Series', short: 'SERIES', emoji: '📺',
+    accent: '#a3e635', main: '#166534', dark: '#14532d', light: '#4ade80' },
+  { key: 'mix', label: 'Máquina Mix', short: 'MIX', emoji: '👾',
+    accent: '#22d3ee', main: '#3b0764', dark: '#1e1b4b', light: '#9333ea' },
 ]
+
+const MACHINE_QUERY_PARAM: Record<MachineKey, string> = {
+  anime: 'anime',
+  movie: 'movie',
+  series: 'series',
+  mix: 'mix',
+}
 
 // ─── Utility ─────────────────────────────────────────────────────────────────
 
 
 
-const API_URL = 'http://localhost:4000/api/animes'
+const MACHINE_URL = 'http://localhost:4000/api/machine/capsules'
+const CONSUME_URL = 'http://localhost:4000/api/capsules'
+const RESET_URL = 'http://localhost:4000/api/admin/reset'
+const HISTORY_URL = 'http://localhost:4000/api/history'
+const ADMIN_SECRET_KEY = '65f4d8c6989f4c02b6b44da2e438f506'
 const REFRESH_INTERVAL_MIN = 60
 const CAPSULE_LIMIT = 30
 
@@ -191,10 +159,27 @@ function generateCapsulePositions(count: number) {
   return simulatePacking(count)
 }
 
-async function fetchAnimes(): Promise<{ animes: AnimeEntry[] }> {
-  const res = await fetch(API_URL)
+async function fetchAnimes(category: MachineKey): Promise<{ capsules: AnimeEntry[]; category: string }> {
+  const url = `${MACHINE_URL}?category=${MACHINE_QUERY_PARAM[category]}`
+  const res = await fetch(url)
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return res.json()
+}
+
+async function fetchHistory(): Promise<AnimeEntry[]> {
+  const res = await fetch(HISTORY_URL)
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  const data = await res.json()
+  return data.history || []
+}
+
+function categoryEmoji(category?: string) {
+  switch (category) {
+    case 'anime': return '🍥'
+    case 'movie': return '🎬'
+    case 'series': return '📺'
+    default: return '👾'
+  }
 }
 
 // ─── Capsule Component ────────────────────────────────────────────────────────
@@ -526,23 +511,23 @@ function CapsuleModal({ anime, onClose }: CapsuleModalProps) {
 type MachineState = 'idle' | 'moving_x' | 'moving_y_down' | 'grabbing' | 'moving_y_up' | 'returning' | 'dropping' | 'dispensed' | 'empty'
 
 export default function ClawMachineViewer() {
-  const [remaining, setRemaining] = useState<AnimeEntry[]>([...MOCK_ANIMES])
-  const [positions, setPositions] = useState<{ x: number, y: number, rotation: number }[]>(() => generateCapsulePositions(MOCK_ANIMES.length))
+  const [remaining, setRemaining] = useState<AnimeEntry[]>([])
+  const [positions, setPositions] = useState<{ x: number, y: number, rotation: number }[]>([])
+  const [categoryFilter, setCategoryFilter] = useState<MachineKey>('anime')
 
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
 
-  const loadAnimes = useCallback(async () => {
+  const loadAnimes = useCallback(async (category: MachineKey, force = false) => {
     try {
-      const data = await fetchAnimes()
-      if (data.animes && data.animes.length > 0) {
-        if (sessionStarted.current) {
+      const data = await fetchAnimes(category)
+      if (data.capsules) {
+        // No romper la sesión activa salvo que sea un cambio forzado (montaje / cambio de máquina)
+        if (sessionStarted.current && !force) {
           setLoading(false)
           return
         }
-        const pool = data.animes.length > CAPSULE_LIMIT
-          ? [...data.animes].sort(() => Math.random() - 0.5).slice(0, CAPSULE_LIMIT)
-          : data.animes
+        const pool = data.capsules.slice(0, CAPSULE_LIMIT)
         setRemaining(pool)
         setPositions(generateCapsulePositions(pool.length))
         setLoadError(null)
@@ -554,17 +539,57 @@ export default function ClawMachineViewer() {
     }
   }, [])
 
+  // Cargar la máquina activa al montar y cada cierto tiempo
   useEffect(() => {
-    loadAnimes()
-    const id = window.setInterval(loadAnimes, REFRESH_INTERVAL_MIN * 60 * 1000)
+    loadAnimes(categoryFilter, true)
+    const id = window.setInterval(() => loadAnimes(categoryFilter, false), REFRESH_INTERVAL_MIN * 60 * 1000)
     return () => window.clearInterval(id)
-  }, [loadAnimes])
+  }, [loadAnimes, categoryFilter])
+
+  // Cambiar de máquina: deslizar el gabinete hacia el lado del botón pulsado
+  const changeMachine = useCallback((dir: 'left' | 'right') => {
+    const idx = MACHINES.findIndex((m) => m.key === categoryFilter)
+    const nextIdx = dir === 'right'
+      ? (idx + 1) % MACHINES.length
+      : (idx - 1 + MACHINES.length) % MACHINES.length
+    const key = MACHINES[nextIdx].key
+    setSlideDir(dir)
+    setCategoryFilter(key)
+    setModalAnime(null)
+    setDispensed(null)
+    setGrabbedAnime(null)
+    setMachineState('idle')
+    pendingNext.current = null
+    replenishedRef.current = false
+    setIsShaking(false)
+    loadAnimes(key, true)
+  }, [categoryFilter, loadAnimes])
+
+  const refreshHistory = useCallback(async () => {
+    try {
+      const items = await fetchHistory()
+      setHistory(items)
+    } catch {
+      setHistory([])
+    }
+  }, [])
+
+  const openHistory = useCallback(async () => {
+    setHistoryOpen(true)
+    await refreshHistory()
+  }, [refreshHistory])
+
+  const closeHistory = useCallback(() => setHistoryOpen(false), [])
 
   const [dispensed, setDispensed] = useState<AnimeEntry | null>(null)
   const [grabbedAnime, setGrabbedAnime] = useState<AnimeEntry | null>(null)
   const [machineState, setMachineState] = useState<MachineState>('idle')
   const [modalAnime, setModalAnime] = useState<AnimeEntry | null>(null)
   const [isShaking, setIsShaking] = useState(false)
+  const [resetting, setResetting] = useState(false)
+  const [slideDir, setSlideDir] = useState<'left' | 'right'>('right')
+  const [history, setHistory] = useState<AnimeEntry[]>([])
+  const [historyOpen, setHistoryOpen] = useState(false)
 
   // Animation controllers
   const clawXControls = useAnimation()
@@ -574,9 +599,17 @@ export default function ClawMachineViewer() {
 
   const isAnimating = useRef(false)
   const sessionStarted = useRef(false)
+  const pendingNext = useRef<AnimeEntry | null>(null)
+  const modalRef = useRef<AnimeEntry | null>(null)
+  const replenishedRef = useRef(false)
   const chuteX = 40 // X position of the drop chute
   const currentClawX = useRef(chuteX)
   const moveInterval = useRef<number | null>(null)
+
+  // Mantener modalRef sincronizado con modalAnime (para saber si la modal sigue abierta)
+  useEffect(() => {
+    modalRef.current = modalAnime
+  }, [modalAnime])
 
   const startMoving = useCallback((dir: 'left' | 'right') => {
     if (machineState !== 'idle') return
@@ -724,26 +757,92 @@ export default function ClawMachineViewer() {
     grabbedCapsuleControls.set({ y: 0, opacity: 0 })
     isAnimating.current = false
   }, [remaining, positions, clawXControls, clawYControls, clawProngsControls, grabbedCapsuleControls, chuteX])
-
   const handleOpenCapsule = useCallback(() => {
-    if (!dispensed) return
-    setModalAnime(dispensed)
+    const opened = dispensed
+    if (!opened) return
+
+    // Abrir la modal INMEDIATAMENTE (sin bloquear por el backend)
+    setModalAnime(opened)
     setDispensed(null)
+    replenishedRef.current = false
     if (remaining.length === 0) {
       setMachineState('empty')
     } else {
       setMachineState('idle')
     }
+
+    // Registrar consumo en el backend en segundo plano (no bloquea la UI)
+    const captureId = opened.id
+    const currentRemaining = remaining
+    ;(async () => {
+      try {
+        const res = await fetch(`${CONSUME_URL}/${captureId}/consume`, { method: 'PATCH' })
+        if (res.ok) {
+          const body = await res.json()
+          pendingNext.current = body.next || null
+          // Si la modal ya se cerró durante el fetch, reponer aquí (con guarda anti-duplicados)
+          if (!modalRef.current && pendingNext.current && !replenishedRef.current) {
+            const next = pendingNext.current
+            const newRemaining = [...currentRemaining, next]
+            setRemaining(newRemaining)
+            setPositions(generateCapsulePositions(newRemaining.length))
+            pendingNext.current = null
+            replenishedRef.current = true
+            setMachineState('idle')
+          }
+        }
+      } catch {
+        pendingNext.current = null
+      }
+    })()
   }, [dispensed, remaining])
 
   const handleCloseModal = useCallback(() => {
     setModalAnime(null)
-    if (remaining.length === 0 && dispensed === null) {
+
+    // Al cerrar, añadir la cápsula pendiente (con animación de caída)
+    const hadNext = pendingNext.current !== null
+    if (pendingNext.current && !replenishedRef.current) {
+      const next = pendingNext.current
+      const newRemaining = [...remaining, next]
+      setRemaining(newRemaining)
+      setPositions(generateCapsulePositions(newRemaining.length))
+      pendingNext.current = null
+      replenishedRef.current = true
+    }
+
+    if (remaining.length === 0 && !hadNext) {
       setMachineState('empty')
     } else {
       setMachineState('idle')
     }
-  }, [remaining, dispensed])
+  }, [remaining])
+
+  const handleAdminReset = useCallback(async () => {
+    if (!window.confirm('¿Resetear todas las cápsulas a PENDING? La máquina se rellenará con 30 premios.')) return
+    setResetting(true)
+    try {
+      const res = await fetch(RESET_URL, {
+        method: 'POST',
+        headers: { 'x-admin-key': ADMIN_SECRET_KEY },
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error || `HTTP ${res.status}`)
+      }
+      setModalAnime(null)
+      setDispensed(null)
+      pendingNext.current = null
+      replenishedRef.current = false
+      await loadAnimes(categoryFilter, true)
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Error al resetear')
+    } finally {
+      setResetting(false)
+    }
+  }, [loadAnimes, categoryFilter])
+
+  const activeMachine = MACHINES.find((m) => m.key === categoryFilter) || MACHINES[0]
 
   return (
     <div style={{
@@ -753,7 +852,39 @@ export default function ClawMachineViewer() {
       alignItems: 'center',
       justifyContent: 'center',
       padding: '20px 16px 40px',
+      // Tema cromático según máquina activa
+      ['--c-machine-main' as any]: activeMachine.main,
+      ['--c-machine-dark' as any]: activeMachine.dark,
+      ['--c-machine-light' as any]: activeMachine.light,
+      ['--c-machine-accent' as any]: activeMachine.accent,
     }}>
+
+      {/* History toggle (discreto, fijo arriba-derecha) */}
+      <button
+        onClick={openHistory}
+        title="Historial de títulos"
+        aria-label="Abrir historial"
+        style={{
+          position: 'fixed',
+          top: 14,
+          right: 14,
+          zIndex: 120,
+          width: 42,
+          height: 42,
+          borderRadius: 10,
+          background: 'var(--c-machine-dark)',
+          border: '2px solid var(--c-machine-light)',
+          color: 'var(--c-text-main)',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: 16,
+          boxShadow: '0 4px 12px rgba(0,0,0,0.35)',
+        }}
+      >
+        🕘
+      </button>
 
       {/* Title */}
       <div style={{ textAlign: 'center', marginBottom: 30 }}>
@@ -770,6 +901,25 @@ export default function ClawMachineViewer() {
         <p style={{ margin: '8px 0 0', fontWeight: 700, color: 'var(--c-text-light)' }}>
           ¡Descubre tu próximo anime!
         </p>
+        <button
+          onClick={handleAdminReset}
+          disabled={resetting}
+          title="Resetear máquina (admin)"
+          style={{
+            marginTop: 12,
+            background: 'var(--c-machine-dark)',
+            color: 'var(--c-text-light)',
+            border: '2px solid var(--c-machine-light)',
+            borderRadius: 8,
+            padding: '6px 14px',
+            fontSize: 12,
+            fontWeight: 700,
+            cursor: resetting ? 'default' : 'pointer',
+            opacity: resetting ? 0.6 : 1,
+          }}
+        >
+          {resetting ? 'Reseteando…' : '↻ Resetear máquina'}
+        </button>
       </div>
 
       {/* Loading / Error states */}
@@ -787,15 +937,53 @@ export default function ClawMachineViewer() {
         </div>
       )}
 
-      {/* Main Machine */}
-      <motion.div
-        animate={isShaking ? { x: [-3, 3, -4, 4, -2, 2, 0], y: [1, -1, 2, -2, 1, -1, 0] } : {}}
-        transition={{ duration: 0.4 }}
-        style={{
-          width: '100%',
-          maxWidth: 340,
-          position: 'relative'
-        }}>
+      {/* Machine + side navigation */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', maxWidth: 480, justifyContent: 'center' }}>
+        {/* Left: previous machine */}
+        <motion.button
+          whileTap={{ scale: 0.9 }}
+          onClick={() => changeMachine('left')}
+          title="Máquina anterior"
+          aria-label="Máquina anterior"
+          style={{
+            width: 44,
+            height: 44,
+            borderRadius: '50%',
+            flexShrink: 0,
+            background: 'var(--c-machine-dark)',
+            border: '3px solid var(--c-machine-light)',
+            color: 'var(--c-text-main)',
+            fontSize: 20,
+            fontWeight: 900,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 4px 0 var(--c-machine-main), inset 0 2px 0 rgba(255,255,255,0.3)',
+            padding: 0,
+          }}
+        >
+          ◀
+        </motion.button>
+
+        {/* Main Machine */}
+        <AnimatePresence mode="wait">
+        <motion.div
+          key={categoryFilter}
+          initial={{ opacity: 0, x: slideDir === 'right' ? 90 : -90 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: slideDir === 'right' ? -90 : 90 }}
+          transition={{ duration: 0.32, ease: 'easeInOut' }}
+          style={{ width: '100%', maxWidth: 340, display: 'flex', justifyContent: 'center' }}
+        >
+          <motion.div
+            animate={isShaking ? { x: [-3, 3, -4, 4, -2, 2, 0], y: [1, -1, 2, -2, 1, -1, 0] } : {}}
+            transition={{ duration: 0.4 }}
+            style={{
+              width: '100%',
+              maxWidth: 340,
+              position: 'relative'
+            }}>
 
         {/* Top Cabinet */}
         <div className="machine-cabinet" style={{
@@ -814,8 +1002,17 @@ export default function ClawMachineViewer() {
             border: '2px solid var(--c-machine-light)'
           }}>
             <Star size={14} color="var(--c-machine-accent)" fill="var(--c-machine-accent)" />
-            <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--c-text-main)' }}>
-              {remaining.length} PREMIOS
+            <span style={{
+              fontSize: 12,
+              fontWeight: 800,
+              letterSpacing: 1,
+              color: 'var(--c-text-main)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+            }}>
+              <span style={{ fontSize: 14 }}>{activeMachine.emoji}</span>
+              {activeMachine.label.toUpperCase()}
             </span>
             <Star size={14} color="var(--c-machine-accent)" fill="var(--c-machine-accent)" />
           </div>
@@ -874,6 +1071,27 @@ export default function ClawMachineViewer() {
                 }}
               >
                 <CapsuleBall color={anime.capsuleColor} size={40} />
+                {categoryFilter === 'mix' && anime.category && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      bottom: -4,
+                      right: -4,
+                      width: 16,
+                      height: 16,
+                      borderRadius: '50%',
+                      background: '#0f0a18',
+                      border: '1px solid rgba(255,255,255,0.5)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: 9,
+                      zIndex: 2,
+                    }}
+                  >
+                    {categoryEmoji(anime.category)}
+                  </div>
+                )}
               </motion.div>
             ))}
 
@@ -1170,6 +1388,36 @@ export default function ClawMachineViewer() {
           </div>
         </div>
       </motion.div>
+      </motion.div>
+      </AnimatePresence>
+
+        {/* Right: next machine */}
+        <motion.button
+          whileTap={{ scale: 0.9 }}
+          onClick={() => changeMachine('right')}
+          title="Máquina siguiente"
+          aria-label="Máquina siguiente"
+          style={{
+            width: 44,
+            height: 44,
+            borderRadius: '50%',
+            flexShrink: 0,
+            background: 'var(--c-machine-dark)',
+            border: '3px solid var(--c-machine-light)',
+            color: 'var(--c-text-main)',
+            fontSize: 20,
+            fontWeight: 900,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 4px 0 var(--c-machine-main), inset 0 2px 0 rgba(255,255,255,0.3)',
+            padding: 0,
+          }}
+        >
+          ▶
+        </motion.button>
+      </div>
 
       {/* Footer */}
       <p style={{
@@ -1188,6 +1436,146 @@ export default function ClawMachineViewer() {
             anime={modalAnime}
             onClose={handleCloseModal}
           />
+        )}
+      </AnimatePresence>
+
+      {/* History Drawer */}
+      <AnimatePresence>
+        {historyOpen && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              className="modal-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={closeHistory}
+              style={{
+                position: 'fixed',
+                inset: 0,
+                zIndex: 200,
+              }}
+            />
+            {/* Panel lateral */}
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'tween', duration: 0.28, ease: 'easeOut' }}
+              style={{
+                position: 'fixed',
+                top: 0,
+                right: 0,
+                bottom: 0,
+                width: 'min(340px, 85vw)',
+                zIndex: 210,
+                background: 'var(--c-machine-dark)',
+                borderLeft: '3px solid var(--c-machine-light)',
+                boxShadow: '-8px 0 30px rgba(0,0,0,0.45)',
+                display: 'flex',
+                flexDirection: 'column',
+              }}
+            >
+              {/* Header */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '16px 18px',
+                borderBottom: '2px solid var(--c-machine-light)',
+              }}>
+                <span style={{
+                  fontSize: 15,
+                  fontWeight: 900,
+                  color: 'var(--c-text-main)',
+                  textTransform: 'uppercase',
+                  letterSpacing: 1,
+                }}>
+                  🕘 Historial
+                </span>
+                <button
+                  onClick={closeHistory}
+                  aria-label="Cerrar historial"
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--c-text-light)',
+                    fontSize: 18,
+                    cursor: 'pointer',
+                    fontWeight: 800,
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Lista */}
+              <div style={{
+                flex: 1,
+                overflowY: 'auto',
+                padding: '10px 14px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 10,
+              }}>
+                {history.length === 0 ? (
+                  <p style={{
+                    color: 'var(--c-text-light)',
+                    fontSize: 13,
+                    textAlign: 'center',
+                    marginTop: 30,
+                    opacity: 0.8,
+                  }}>
+                    Aún no hay títulos en el historial.
+                  </p>
+                ) : (
+                  history.map((item) => (
+                    <div key={item.id} style={{
+                      display: 'flex',
+                      gap: 10,
+                      alignItems: 'center',
+                      background: 'rgba(255,255,255,0.05)',
+                      border: '1px solid rgba(255,255,255,0.12)',
+                      borderRadius: 10,
+                      padding: 8,
+                    }}>
+                      <img
+                        src={item.image}
+                        alt=""
+                        style={{
+                          width: 42,
+                          height: 58,
+                          borderRadius: 6,
+                          objectFit: 'cover',
+                          flexShrink: 0,
+                        }}
+                      />
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{
+                          color: 'var(--c-text-main)',
+                          fontWeight: 800,
+                          fontSize: 13,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}>
+                          {item.title}
+                        </div>
+                        <div style={{
+                          color: 'var(--c-text-light)',
+                          fontSize: 11,
+                          marginTop: 2,
+                        }}>
+                          {item.consumedAt ? new Date(item.consumedAt).toLocaleString() : ''}
+                        </div>
+                      </div>
+                      <span style={{ fontSize: 16 }}>{categoryEmoji(item.category)}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </motion.div>
+          </>
         )}
       </AnimatePresence>
     </div>
