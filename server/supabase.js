@@ -69,6 +69,18 @@ export async function getByStatus(...statuses) {
   return { data: (data || []).map(mapRowToCapsule), error }
 }
 
+export async function getAllTitles(category = null, limit = 500) {
+  if (!supabase) return { data: null, error: 'sin supabase' }
+  let query = supabase
+    .from(TABLE)
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(limit)
+  if (category) query = query.eq('category', category)
+  const { data, error } = await query
+  return { data: (data || []).map(mapRowToCapsule), error }
+}
+
 export async function getPendingOldest(limit = 30) {
   if (!supabase) return { data: null, error: 'sin supabase' }
   const { data, error } = await supabase

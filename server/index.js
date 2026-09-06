@@ -10,6 +10,7 @@ import {
   getByStatusCategory,
   getPendingOldest,
   getPendingOldestByCategory,
+  getAllTitles,
   setStatus,
   setConsumed,
   getConsumedHistory,
@@ -20,6 +21,9 @@ import {
 
 const MACHINE_SIZE = 30
 const CATEGORIES = ['anime', 'movie', 'series']
+
+// Enviar notificación al canal de anuncios al sacar un premio (togglable en runtime)
+let webhookEnabled = true
 
 const app = express()
 app.use(express.json())
@@ -104,6 +108,18 @@ app.get('/api/capsules', async (req, res) => {
   }
 })
 
+app.get('/api/titles', async (req, res) => {
+  try {
+    const raw = String(req.query.category || '').toLowerCase()
+    const category = CATEGORIES.includes(raw) ? raw : null
+    const { data, error } = await getAllTitles(category)
+    if (error) return res.status(500).json({ error })
+    res.json({ titles: data })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 app.patch('/api/capsules/:id/consume', async (req, res) => {
   try {
     const { id } = req.params
@@ -115,11 +131,13 @@ app.patch('/api/capsules/:id/consume', async (req, res) => {
     if (updErr) return res.status(500).json({ error: updErr.message })
 
     // Notificar por webhook de Discord (no-bloqueante; si falla no rompe la respuesta)
-    sendDiscordWebhookNotification({
-      ...consumed,
-      category: consumed.category || null,
-      status: 'WATCHED',
-    }).catch((err) => console.error('[webhook] error inesperado:', err.message))
+    if (webhookEnabled) {
+      sendDiscordWebhookNotification({
+        ...consumed,
+        category: consumed.category || null,
+        status: 'WATCHED',
+      }).catch((err) => console.error('[webhook] error inesperado:', err.message))
+    }
 
     // Rellenar la máquina con el siguiente PENDING más antiguo de la misma categoría
     let next = null
@@ -157,6 +175,27 @@ app.post('/api/sync-discord', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
+})
+
+app.get('/api/admin/webhook/status', (req, res) => {
+  const key = req.headers['x-admin-key'] || (req.query && req.query.key)
+  if (!config.adminSecretKey || key !== config.adminSecretKey) {
+    return res.status(401).json({ error: 'Clave de administrador inválida' })
+  }
+  res.json({ enabled: webhookEnabled })
+})
+
+app.post('/api/admin/webhook/toggle', (req, res) => {
+  const key = req.headers['x-admin-key'] || (req.body && req.body.key)
+  if (!config.adminSecretKey || key !== config.adminSecretKey) {
+    return res.status(401).json({ error: 'Clave de administrador inválida' })
+  }
+  const desired = req.body && typeof req.body.enabled === 'boolean'
+    ? req.body.enabled
+    : !webhookEnabled
+  webhookEnabled = desired
+  console.log(`[webhook] Envío de notificaciones: ${webhookEnabled ? 'ACTIVADO' : 'DESACTIVADO'}`)
+  res.json({ ok: true, enabled: webhookEnabled })
 })
 
 app.post('/api/admin/reset', async (req, res) => {

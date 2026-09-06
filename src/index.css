@@ -190,3 +190,27 @@
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* Library scrollbar */
+.library-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--c-machine-light) transparent;
+}
+
+.library-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.library-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.library-scroll::-webkit-scrollbar-thumb {
+  background: var(--c-machine-light);
+  border-radius: 8px;
+  border: 2px solid var(--c-machine-dark);
+}
+
+.library-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--c-machine-accent);
+}

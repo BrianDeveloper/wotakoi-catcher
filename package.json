@@ -4,11 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently --names SERVER,CLIENT --prefix-colors yellow,cyan \"node server/index.js\" \"vite\"",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "server": "node server/index.js",
-    "dev:all": "concurrently \"node server/index.js\" \"vite\""
+    "server": "node server/index.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.115.0",

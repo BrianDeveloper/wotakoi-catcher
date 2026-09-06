@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 140">
+  <rect width="100" height="140" fill="#1e1b4b"/>
+  <rect x="3" y="3" width="94" height="134" fill="none" stroke="#9333ea" stroke-width="4" rx="8"/>
+  <text x="50" y="64" font-size="36" text-anchor="middle">🍥</text>
+  <text x="50" y="94" font-size="12" text-anchor="middle" fill="#d8b4fe" font-family="Outfit, system-ui, sans-serif" font-weight="700" letter-spacing="1">SIN PORTADA</text>
+</svg>
