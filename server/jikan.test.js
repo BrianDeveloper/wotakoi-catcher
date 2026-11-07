@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   explainMatchRejection,
   normalizeTMDBSearchQuery,
+  selectDisplayTitle,
   selectMexicanSpanishMetadata,
   titleScore,
   TMDB_LANGUAGE,
@@ -57,6 +58,27 @@ test('uses an explicit Mexico Spanish translation before search/original titles'
   )
 
   assert.equal(result.title, 'Título de México')
+})
+
+test('preserves a user-submitted Latin-script title instead of TMDB Japanese metadata', () => {
+  assert.equal(selectDisplayTitle('Kimetsu no Yaiba', '鬼滅の刃'), 'Kimetsu no Yaiba')
+})
+
+test('uses a romanized TMDB alternative for a Japanese-script query', () => {
+  const result = selectDisplayTitle('鬼滅の刃', '鬼滅の刃', [
+    { iso_3166_1: 'ES', title: 'Guardianes de la noche' },
+    { iso_3166_1: 'US', title: 'Demon Slayer: Kimetsu no Yaiba' },
+  ])
+
+  assert.equal(result, 'Demon Slayer: Kimetsu no Yaiba')
+})
+
+test('uses a Latin localized title when TMDB has no romanized alternative', () => {
+  assert.equal(selectDisplayTitle('進撃の巨人', 'Ataque a los titanes'), 'Ataque a los titanes')
+})
+
+test('preserves Japanese input when TMDB provides no readable Latin title', () => {
+  assert.equal(selectDisplayTitle('進撃の巨人', '進撃の巨人'), '進撃の巨人')
 })
 
 test('explains when TMDB returned no usable candidates', () => {

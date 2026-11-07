@@ -45,4 +45,4 @@ Las sugerencias agregadas con `/sugerir` se guardan directamente en `media_items
 
 ## Idioma de metadatos TMDB
 
-Las búsquedas y la consulta de detalles solicitan `es-MX`. Cuando TMDB no tiene una traducción mexicana, la integración conserva el título localizado devuelto por la búsqueda y, en último caso, el título original disponible; las sinopsis no cambian a inglés.
+Las búsquedas y la consulta de detalles solicitan `es-MX`. Cuando el título sugerido está en letras latinas, la app conserva ese título visible aunque TMDB solo devuelva el original japonés; TMDB sigue aportando póster, sinopsis y géneros. Si se sugiere un título con caracteres japoneses, se consultan los títulos alternativos de TMDB y se prefiere una variante en letras latinas (primero EE. UU. o Reino Unido, luego México o España). Si TMDB no ofrece ninguna, se conserva el título sugerido sin transliterarlo automáticamente para evitar lecturas incorrectas.

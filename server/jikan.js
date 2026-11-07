@@ -257,7 +257,32 @@ export function selectMexicanSpanishMetadata(item, localizedDetails) {
   }
 }
 
-async function fetchMexicanSpanishMetadata(item) {
+export function selectDisplayTitle(submittedTitle, localizedTitle, alternatives = []) {
+  const submitted = String(submittedTitle || '').trim()
+  const containsJapanese = /[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}]/u.test(submitted)
+  if (!containsJapanese) return submitted || localizedTitle
+
+  const candidates = alternatives
+    .map((alternative) => ({
+      title: String(alternative.title || '').trim(),
+      region: alternative.iso_3166_1,
+    }))
+    .filter(({ title }) => title && !/[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}]/u.test(title))
+  const regionPriority = ['US', 'GB', 'MX', 'ES']
+  for (const region of regionPriority) {
+    const candidate = candidates.find((item) => item.region === region)
+    if (candidate) return candidate.title
+  }
+  if (candidates.length) return candidates[0].title
+
+  if (localizedTitle
+    && !/[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}]/u.test(localizedTitle)) {
+    return localizedTitle
+  }
+  return submitted || localizedTitle
+}
+
+async function fetchMexicanSpanishMetadata(item, submittedTitle) {
   const params = new URLSearchParams({
     api_key: TMDB_KEY,
     language: TMDB_LANGUAGE,
@@ -270,7 +295,32 @@ async function fetchMexicanSpanishMetadata(item) {
   if (!response.ok) {
     throw new Error(`TMDB details error: ${response.status} ${response.statusText}`)
   }
-  return selectMexicanSpanishMetadata(item, await response.json())
+  const localized = selectMexicanSpanishMetadata(item, await response.json())
+  if (!/[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}]/u.test(submittedTitle)) {
+    return { ...localized, title: selectDisplayTitle(submittedTitle, localized.title) }
+  }
+
+  try {
+    const alternativesResponse = await fetch(
+      `${TMDB_BASE}/${item.media_type}/${item.id}/alternative_titles?api_key=${encodeURIComponent(TMDB_KEY)}`,
+      { signal: AbortSignal.timeout(15000) },
+    )
+    if (!alternativesResponse.ok) {
+      throw new Error(`TMDB alternative titles error: ${alternativesResponse.status} ${alternativesResponse.statusText}`)
+    }
+    const alternativesData = await alternativesResponse.json()
+    const alternatives = alternativesData.titles || alternativesData.results || []
+    return {
+      ...localized,
+      title: selectDisplayTitle(submittedTitle, localized.title, alternatives),
+    }
+  } catch (error) {
+    console.warn(`[tmdb] No se pudieron consultar títulos alternativos para "${submittedTitle}": ${error.message}`)
+    return {
+      ...localized,
+      title: selectDisplayTitle(submittedTitle, localized.title),
+    }
+  }
 }
 
 export function explainMatchRejection(title, match) {
@@ -332,7 +382,7 @@ async function getAnimeMeta(entry, attempt = 1, maxRetries = 5, categoryOverride
   const match = await searchTMDB(title, attempt, maxRetries)
   if (!match.item) return { anime: null, rejection: explainMatchRejection(title, match) }
   const item = match.item
-  const localized = await fetchMexicanSpanishMetadata(item)
+  const localized = await fetchMexicanSpanishMetadata(item, title)
 
   const genres = mapGenres(item.genre_ids)
   const visibleGenres = genres.slice(0, 2)
