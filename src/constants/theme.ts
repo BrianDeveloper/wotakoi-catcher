@@ -10,14 +10,17 @@ export const CONTROL_BUTTONS = {
   shakeShadow: '0 4px 0 #b45309, inset 0 2px 0 rgba(255,255,255,0.4)',
 }
 
-// Tono metálico del mecanismo del gancho (motor, brazo, pinzas)
+// Tono metálico del mecanismo del gancho (cable, motor, tenazas)
 export const METAL = {
-  motorBg: '#ccc',
-  motorBorder: '#999',
-  arm: '#666',
-  headBg: '#fff',
-  headBorder: '#ccc',
-  prong: '#ccc',
+  chrome: {
+    high: '#f4f6f8',
+    mid: '#c8ced6',
+    body: '#8b939c',
+    low: '#6d747d',
+    edge: '#50575f',
+  },
+  cable: ['#5a5f66', '#c8ced6', '#8b939c', '#e6eaee'],
+  led: { idle: '#22c55e', busy: '#f59e0b' },
 }
 
 // Ranura de monedas y panel de instrucciones de la base

@@ -2,12 +2,28 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   explainMatchRejection,
+  normalizeTMDBSearchQuery,
   selectMexicanSpanishMetadata,
+  titleScore,
   TMDB_LANGUAGE,
 } from './jikan.js'
 
 test('uses the Mexican Spanish locale for TMDB requests', () => {
   assert.equal(TMDB_LANGUAGE, 'es-MX')
+})
+
+test('searches the primary title when a parenthetical alternate title is included', () => {
+  assert.equal(normalizeTMDBSearchQuery('Get Out(Huye)'), 'Get Out')
+  assert.equal(normalizeTMDBSearchQuery('Get Out (Huye)'), 'Get Out')
+  assert.equal(normalizeTMDBSearchQuery('Get Out (2017)'), 'Get Out (2017)')
+  assert.equal(normalizeTMDBSearchQuery('One Piece (Live Action)'), 'One Piece (Live Action)')
+})
+
+test('does not accept an unrelated title just because it matches a parenthetical alias', () => {
+  const query = normalizeTMDBSearchQuery('Get Out(Huye)').toLowerCase()
+
+  assert.equal(titleScore(query, 'Get Out'), 1)
+  assert.equal(titleScore(query, 'Huye y gana'), 0)
 })
 
 test('prefers the localized es-MX detail title and synopsis', () => {

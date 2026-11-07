@@ -1,7 +1,9 @@
 import { createClient } from '@supabase/supabase-js'
 import config from './config.js'
+import { randomizeActiveAssignments } from './randomizeTitles.js'
 
 let supabase = null
+let settingsSupabase = null
 
 if (config.supabaseUrl && config.supabaseAnonKey) {
   supabase = createClient(config.supabaseUrl, config.supabaseAnonKey)
@@ -9,7 +11,14 @@ if (config.supabaseUrl && config.supabaseAnonKey) {
   console.warn('[supabase] Faltan SUPABASE_URL o SUPABASE_ANON_KEY; la persistencia no estará disponible.')
 }
 
+if (config.supabaseUrl && config.supabaseServiceRoleKey) {
+  settingsSupabase = createClient(config.supabaseUrl, config.supabaseServiceRoleKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  })
+}
+
 const TABLE = 'media_items'
+const SETTINGS_TABLE = 'app_settings'
 
 function mapRowToCapsule(row) {
   if (!row) return null
@@ -30,7 +39,7 @@ function mapRowToCapsule(row) {
 }
 
 export async function upsertMedia(items) {
-  if (!supabase) return { added: 0 }
+  if (!supabase) return { added: 0, error: new Error('Supabase no está configurado') }
   const rows = items.map((it) => ({
     id: it.id,
     title: it.title,
@@ -46,7 +55,8 @@ export async function upsertMedia(items) {
 
   // Verificar IDs existentes
   const ids = rows.map((r) => r.id)
-  const { data: existing } = await supabase.from(TABLE).select('id').in('id', ids)
+  const { data: existing, error: existingError } = await supabase.from(TABLE).select('id').in('id', ids)
+  if (existingError) return { added: 0, error: existingError }
   const existingIds = new Set((existing || []).map((e) => e.id))
   const newRows = rows.filter((r) => !existingIds.has(r.id))
 
@@ -54,6 +64,12 @@ export async function upsertMedia(items) {
 
   const { error } = await supabase.from(TABLE).insert(newRows)
   return { added: newRows.length, error }
+}
+
+export async function hasMediaItems() {
+  if (!supabase) return { data: null, error: new Error('Supabase no está configurado') }
+  const { data, error } = await supabase.from(TABLE).select('id').limit(1)
+  return { data: Boolean(data?.length), error }
 }
 
 export async function getByStatus(...statuses) {
@@ -144,13 +160,57 @@ export async function updateMeta(id, meta) {
   return { data, error }
 }
 
-export async function updateCategory(id, category) {
-  if (!supabase) return { data: null, error: 'sin supabase' }
-  const { data, error } = await supabase
+export async function backfillCategories(items) {
+  if (!supabase) return { error: new Error('Supabase no está configurado') }
+  if (!items.length) return { error: null }
+
+  const { data: existing, error: selectError } = await supabase
     .from(TABLE)
-    .update({ category })
-    .eq('id', id)
-  return { data, error }
+    .select('id, category')
+    .in('id', items.map((item) => item.id))
+  if (selectError) return { error: selectError }
+
+  const categoryById = new Map(items.map((item) => [item.id, item.category]))
+  const missingByCategory = new Map()
+  for (const row of existing || []) {
+    if (row.category) continue
+    const category = categoryById.get(row.id)
+    if (!category) continue
+    const ids = missingByCategory.get(category) || []
+    ids.push(row.id)
+    missingByCategory.set(category, ids)
+  }
+
+  for (const [category, ids] of missingByCategory) {
+    const { error } = await supabase
+      .from(TABLE)
+      .update({ category })
+      .in('id', ids)
+    if (error) return { error }
+  }
+  return { error: null }
+}
+
+export async function getAppSetting(key) {
+  if (!settingsSupabase) {
+    return { data: null, error: new Error('Falta SUPABASE_SERVICE_ROLE_KEY en server/.env') }
+  }
+  const { data, error } = await settingsSupabase
+    .from(SETTINGS_TABLE)
+    .select('value')
+    .eq('key', key)
+    .maybeSingle()
+  return { data: data?.value ?? null, error }
+}
+
+export async function setAppSetting(key, value) {
+  if (!settingsSupabase) {
+    return { error: new Error('Falta SUPABASE_SERVICE_ROLE_KEY en server/.env') }
+  }
+  const { error } = await settingsSupabase
+    .from(SETTINGS_TABLE)
+    .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: 'key' })
+  return { error }
 }
 
 export async function setStatus(ids, status) {
@@ -187,6 +247,79 @@ export async function getById(id) {
   if (!supabase) return { data: null, error: 'sin supabase' }
   const { data, error } = await supabase.from(TABLE).select('*').eq('id', id).maybeSingle()
   return { data: data ? mapRowToCapsule(data) : null, error }
+}
+
+export async function deleteMediaById(id) {
+  if (!supabase) return { data: null, error: new Error('Supabase no está configurado') }
+  const { data, error } = await supabase
+    .from(TABLE)
+    .delete()
+    .eq('id', id)
+    .select('id')
+    .maybeSingle()
+  return { data, error }
+}
+
+export async function updateTitleCorrection(id, category, meta = null) {
+  if (!supabase) return { data: null, error: new Error('Supabase no está configurado') }
+  const updates = { category }
+  if (meta) {
+    Object.assign(updates, {
+      title: meta.title,
+      image: meta.image || null,
+      synopsis: meta.synopsis || null,
+      genre: meta.genre || null,
+      all_genres: meta.allGenres || null,
+      capsule_color: meta.capsuleColor || null,
+    })
+  }
+  const { data, error } = await supabase
+    .from(TABLE)
+    .update(updates)
+    .eq('id', id)
+    .select('id')
+    .maybeSingle()
+  return { data, error }
+}
+
+export async function reshuffleActiveTitles(capacity = 30) {
+  if (!supabase) return { data: null, error: new Error('Supabase no está configurado') }
+
+  const activeItems = []
+  for (let offset = 0; ; offset += 1000) {
+    const { data, error } = await supabase
+      .from(TABLE)
+      .select('id, category')
+      .in('status', ['PENDING', 'IN_MACHINE'])
+      .range(offset, offset + 999)
+    if (error) return { data: null, error }
+    activeItems.push(...(data || []))
+    if (!data || data.length < 1000) break
+  }
+
+  const assignments = randomizeActiveAssignments(activeItems, capacity)
+  if (assignments.pendingIds.length) {
+    const { error } = await supabase
+      .from(TABLE)
+      .update({ status: 'PENDING' })
+      .in('id', assignments.pendingIds)
+    if (error) return { data: null, error }
+  }
+  if (assignments.machineIds.length) {
+    const { error } = await supabase
+      .from(TABLE)
+      .update({ status: 'IN_MACHINE' })
+      .in('id', assignments.machineIds)
+    if (error) return { data: null, error }
+  }
+
+  return {
+    data: {
+      selected: assignments.machineIds.length,
+      pending: assignments.pendingIds.length,
+    },
+    error: null,
+  }
 }
 
 export async function resetAll() {

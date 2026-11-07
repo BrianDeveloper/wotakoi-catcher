@@ -29,10 +29,18 @@ export function TitlesDrawer() {
     libraryError,
     closeLibrary,
     selectLibraryCategory,
+    handleDeleteTitle,
+    handleCorrectTitle,
   } = useClawMachine()
 
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [correctingId, setCorrectingId] = useState<string | null>(null)
+  const [categorySelections, setCategorySelections] = useState<Record<string, string>>({})
+  const [titleQueries, setTitleQueries] = useState<Record<string, string>>({})
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [actionNotice, setActionNotice] = useState<string | null>(null)
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -41,6 +49,52 @@ export function TitlesDrawer() {
       (statusFilter === 'all' || item.status === statusFilter)
     )
   }, [titles, query, statusFilter])
+
+  const deleteFromLibrary = async (id: string, title: string) => {
+    const adminKey = sessionStorage.getItem('wotakoi-admin-key')
+    if (!adminKey) {
+      setActionError('Conecta la administración antes de eliminar títulos.')
+      return
+    }
+    if (!window.confirm(`¿Eliminar permanentemente "${title}"? También se eliminará su registro del historial.`)) return
+
+    setDeletingId(id)
+    setActionError(null)
+    try {
+      await handleDeleteTitle(adminKey, id)
+      await selectLibraryCategory(libraryFilter)
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'No se pudo eliminar el título.')
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  const correctFromLibrary = async (id: string, currentTitle: string) => {
+    const adminKey = sessionStorage.getItem('wotakoi-admin-key')
+    if (!adminKey) {
+      setActionError('Conecta la administración antes de corregir títulos.')
+      return
+    }
+
+    setCorrectingId(id)
+    setActionError(null)
+    setActionNotice(null)
+    try {
+      const current = titles.find((item) => item.id === id)
+      const category = categorySelections[id] || current?.category || 'series'
+      const queryTitle = titleQueries[id]?.trim() || currentTitle
+      const result = await handleCorrectTitle(adminKey, id, category, queryTitle)
+      setActionNotice(result.metadataUpdated
+        ? `Se actualizó "${result.title}" y se guardó su categoría.`
+        : `Se guardó la categoría de "${result.title}", pero TMDB no encontró metadatos adecuados.`)
+      await selectLibraryCategory(libraryFilter)
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'No se pudo corregir el título.')
+    } finally {
+      setCorrectingId(null)
+    }
+  }
 
   return (
     <AnimatePresence>
@@ -165,6 +219,16 @@ export function TitlesDrawer() {
               flexDirection: 'column',
               gap: 10,
             }}>
+              {actionError && (
+                <p role="alert" style={{ color: STATE_COLORS.error, fontSize: 12, margin: 0 }}>
+                  {actionError}
+                </p>
+              )}
+              {actionNotice && (
+                <p role="status" style={{ color: 'var(--c-text-light)', fontSize: 12, margin: 0 }}>
+                  {actionNotice}
+                </p>
+              )}
               {libraryLoading && (
                 <p style={{ color: 'var(--c-text-light)', fontSize: 13, textAlign: 'center', marginTop: 30 }}>
                   Cargando títulos…
@@ -248,7 +312,95 @@ export function TitlesDrawer() {
                           {meta.emoji} {meta.label}
                         </span>
                       </div>
+                      <div style={{ display: 'flex', gap: 5, marginTop: 6 }}>
+                        <input
+                          aria-label={`Título para buscar en TMDB: ${item.title}`}
+                          value={titleQueries[item.id] ?? item.title}
+                          onChange={(event) => setTitleQueries((current) => ({
+                            ...current,
+                            [item.id]: event.target.value,
+                          }))}
+                          maxLength={200}
+                          disabled={correctingId !== null || deletingId !== null}
+                          style={{
+                            minWidth: 0,
+                            flex: 1,
+                            background: 'var(--c-bg)',
+                            color: 'var(--c-text-main)',
+                            border: `1px solid ${SURFACES.cardBorder}`,
+                            borderRadius: 6,
+                            padding: '4px 5px',
+                            fontSize: 10,
+                          }}
+                        />
+                      </div>
+                      <div style={{ display: 'flex', gap: 5, marginTop: 5 }}>
+                        <select
+                          aria-label={`Categoría de ${item.title}`}
+                          value={categorySelections[item.id] ?? item.category ?? 'series'}
+                          onChange={(event) => setCategorySelections((current) => ({
+                            ...current,
+                            [item.id]: event.target.value,
+                          }))}
+                          disabled={correctingId !== null || deletingId !== null}
+                          style={{
+                            minWidth: 0,
+                            flex: 1,
+                            background: 'var(--c-bg)',
+                            color: 'var(--c-text-main)',
+                            border: `1px solid ${SURFACES.cardBorder}`,
+                            borderRadius: 6,
+                            padding: '4px 5px',
+                            fontSize: 10,
+                          }}
+                        >
+                          <option value="anime">Anime</option>
+                          <option value="movie">Película</option>
+                          <option value="series">Serie</option>
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => void correctFromLibrary(item.id, item.title)}
+                          disabled={correctingId !== null || deletingId !== null}
+                          aria-label={`Actualizar categoría y metadatos de ${item.title}`}
+                          title="Guardar categoría y buscar el título escrito en TMDB para actualizar título, póster y sinopsis"
+                          style={{
+                            border: `1px solid ${SURFACES.cardBorder}`,
+                            borderRadius: 6,
+                            background: 'var(--c-bg)',
+                            color: 'var(--c-text-main)',
+                            cursor: correctingId || deletingId ? 'wait' : 'pointer',
+                            padding: '4px 7px',
+                            fontSize: 11,
+                            fontWeight: 800,
+                            flexShrink: 0,
+                            opacity: correctingId || deletingId ? 0.6 : 1,
+                          }}
+                        >
+                          {correctingId === item.id ? '…' : '↻'}
+                        </button>
+                      </div>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => void deleteFromLibrary(item.id, item.title)}
+                      disabled={deletingId !== null}
+                      aria-label={`Eliminar ${item.title}`}
+                      title="Eliminar título y su historial"
+                      style={{
+                        border: `1px solid ${STATE_COLORS.error}88`,
+                        borderRadius: 8,
+                        background: `${STATE_COLORS.error}1a`,
+                        color: STATE_COLORS.error,
+                        cursor: deletingId ? 'wait' : 'pointer',
+                        padding: '7px 9px',
+                        fontWeight: 900,
+                        flexShrink: 0,
+                        opacity: deletingId !== null ? 0.6 : 1,
+                      }}
+                    >
+                      {deletingId === item.id ? '…' : '🗑'}
+                    </button>
                   </div>
                 )
               })}

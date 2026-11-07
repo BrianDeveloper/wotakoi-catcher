@@ -82,10 +82,10 @@ export default function GachaponViewer() {
 
       {/* Title */}
       <div style={{ textAlign: 'center', marginBottom: 30 }}>
-        <h1 style={{
+        <h1 className="font-pixel" style={{
           margin: 0,
-          fontSize: 'clamp(32px, 6vw, 42px)',
-          fontWeight: 900,
+          fontSize: 'clamp(26px, 5vw, 34px)',
+          fontWeight: 400,
           color: 'var(--c-text-main)',
           textShadow: '2px 2px 0px var(--c-machine-dark), 4px 4px 0px var(--c-machine-light)',
           letterSpacing: '2px'

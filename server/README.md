@@ -33,6 +33,16 @@ El backend consulta `DISCORD_CHANNEL_ID` con páginas de hasta `DISCORD_LIMIT` m
 
 En los controles administrativos de la aplicación, introduce `ADMIN_SECRET_KEY` para conectar. Las plantillas aceptan `{title}`, `{category}`, `{suggested_by}` y `{synopsis}`. Usa vista previa y envío de prueba antes de guardar. Las menciones de Discord están desactivadas en los webhooks.
 
+## Administración de la biblioteca
+
+Desde la biblioteca, la administración conectada puede eliminar títulos. El borrado es permanente e incluye el registro del historial. El botón **Sortear máquinas** vuelve a seleccionar aleatoriamente hasta 30 títulos activos por categoría; el resto queda `PENDING` y los títulos `WATCHED` con su historial no se modifican.
+
+En cada título, selecciona una categoría y pulsa **↻** para guardarla y volver a consultar en TMDB el título localizado, póster y sinopsis. Si TMDB no encuentra una coincidencia confiable, se conserva el título y sus metadatos actuales, pero se aplica la categoría seleccionada. El estado y el historial no cambian.
+
+Al buscar en TMDB, un alias de una sola palabra entre paréntesis al final se omite de la búsqueda y se usa el título principal para evitar que esa palabra fuerce una coincidencia incorrecta. Los años como `(2017)` y subtítulos de varias palabras como `(Live Action)` se conservan.
+
+Las sugerencias agregadas con `/sugerir` se guardan directamente en `media_items`, no en el canal de sugerencias. Vaciar `media_items` elimina también esas filas; sincronizar el canal solo puede recuperar sugerencias que estén publicadas allí.
+
 ## Idioma de metadatos TMDB
 
 Las búsquedas y la consulta de detalles solicitan `es-MX`. Cuando TMDB no tiene una traducción mexicana, la integración conserva el título localizado devuelto por la búsqueda y, en último caso, el título original disponible; las sinopsis no cambian a inglés.

@@ -1,10 +1,17 @@
 import express from 'express'
 import cron from 'node-cron'
+import { timingSafeEqual } from 'node:crypto'
 import config from './config.js'
-import { completeDiscordInteraction, getTitles } from './discord.js'
+import { completeDiscordInteraction } from './discord.js'
 import { verifyDiscordRequest } from './discordInteractions.js'
-import { sendDiscordWebhookNotification } from './discordWebhook.js'
-import { getAnimesMeta } from './jikan.js'
+import { getTitles } from './discordSuggestions.js'
+import {
+  DEFAULT_NOTIFICATION_SETTINGS,
+  buildWebhookPayload,
+  sendDiscordWebhookNotification,
+  validateNotificationSettings,
+} from './discordWebhook.js'
+import { getAnimesMeta, getSuggestionMeta } from './jikan.js'
 import {
   upsertMedia,
   getByStatus,
@@ -17,16 +24,27 @@ import {
   getConsumedHistory,
   getById,
   resetAll,
-  updateCategory,
+  backfillCategories,
+  hasMediaItems,
+  getAppSetting,
+  setAppSetting,
+  deleteMediaById,
+  reshuffleActiveTitles,
+  updateTitleCorrection,
 } from './supabase.js'
 
 const MACHINE_SIZE = 30
 const CATEGORIES = ['anime', 'movie', 'series']
 
-// Enviar notificación al canal de anuncios al sacar un premio (togglable en runtime)
-let webhookEnabled = true
-
 const app = express()
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-admin-key, x-signature-ed25519, x-signature-timestamp')
+  if (req.method === 'OPTIONS') return res.sendStatus(204)
+  next()
+})
+
 app.post('/api/discord/interactions', express.raw({ type: 'application/json', limit: '1mb' }), (req, res) => {
   const validSignature = verifyDiscordRequest({
     body: req.body,
@@ -40,7 +58,7 @@ app.post('/api/discord/interactions', express.raw({ type: 'application/json', li
   try {
     interaction = JSON.parse(req.body.toString('utf8'))
   } catch {
-    return res.status(400).json({ error: 'Invalid interaction JSON body.' })
+    return res.status(400).json({ error: 'El cuerpo de la interacción no es JSON válido.' })
   }
 
   if (interaction.type === 1) return res.json({ type: 1 })
@@ -48,41 +66,88 @@ app.post('/api/discord/interactions', express.raw({ type: 'application/json', li
   if (interaction.type !== 2
     || interaction.data?.name !== 'sugerir'
     || typeof interaction.token !== 'string') {
-    return res.status(400).json({ error: 'Unsupported interaction.' })
+    return res.status(400).json({ error: 'Interacción no compatible.' })
   }
 
   res.json({ type: 5 })
   void completeDiscordInteraction(interaction)
-    .catch((error) => console.error('[discord] No se pudo completar la interaccion:', error.message))
+    .catch((error) => console.error('[discord] No se pudo completar la interacción:', error.message))
 })
+
 app.use(express.json())
 
-app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*')
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-admin-key')
-  next()
-})
-
 async function syncDiscord() {
-  const titles = await getTitles()
-  if (!titles.length) return { added: 0 }
+  const { data: mediaExists, error: mediaError } = await hasMediaItems()
+  if (mediaError) throw new Error(`No se pudo comprobar si media_items tiene datos: ${mediaError.message}`)
 
-  // upsert con ignoreDuplicates: true → no sobrescribe status de existentes
-  const { animes, discarded } = await getAnimesMeta(titles)
-  if (!animes.length) return { added: 0 }
-
-  // Backfill de categoría en filas existentes que aún no la tienen
-  let categoryBackfilled = 0
-  for (const a of animes) {
-    const { error } = await updateCategory(a.id, a.category)
-    if (error) categoryBackfilled++
+  const {
+    entries: titles,
+    ignored,
+    messagesRead,
+    backfillComplete,
+    restartedForEmptyMedia,
+    nextState,
+  } = await getTitles({ restartIfMediaEmpty: !mediaExists })
+  const syncState = { ...nextState, hadMediaItems: Boolean(mediaExists) }
+  if (!titles.length) {
+    const { error } = await setAppSetting('discord_sync_state', syncState)
+    if (error) throw new Error(`No se pudo guardar el cursor de Discord: ${error.message}`)
+    return {
+      added: 0,
+      discarded: [],
+      ignored,
+      failed: [],
+      messagesRead,
+      backfillComplete,
+      restartedForEmptyMedia,
+    }
   }
 
-  const withMeta = animes.map((a) => ({ ...a, status: 'PENDING' }))
-  const { error } = await upsertMedia(withMeta)
-  if (error) console.warn('[sync] upsert error:', error.message)
-  return { added: withMeta.length, discarded: discarded.length, categoryBackfilled }
+  const { animes, discarded, failed } = await getAnimesMeta(titles)
+
+  let added = 0
+  if (animes.length) {
+    const withMeta = animes.map((a) => ({ ...a, status: 'PENDING' }))
+    const { added: inserted, error } = await upsertMedia(withMeta)
+    if (error) throw new Error(`No se pudieron guardar los títulos sincronizados: ${error.message}`)
+    added = inserted
+    const { error: categoryError } = await backfillCategories(withMeta)
+    if (categoryError) throw new Error(`No se pudieron completar categorías: ${categoryError.message}`)
+  }
+
+  if (!failed.length) {
+    const { error: stateError } = await setAppSetting('discord_sync_state', {
+      ...syncState,
+      hadMediaItems: Boolean(mediaExists || added),
+    })
+    if (stateError) throw new Error(`No se pudo guardar el cursor de Discord: ${stateError.message}`)
+  }
+  for (const rejection of discarded) {
+    console.info(`[sync] descartado "${rejection.title}": ${rejection.reason}${rejection.bestMatch ? ` Mejor resultado: "${rejection.bestMatch}" (${rejection.score.toFixed(2)}; mínimo ${rejection.threshold.toFixed(2)}).` : ''}`)
+  }
+  for (const failure of failed) {
+    console.warn(`[sync] se reintentará "${failure.title}": ${failure.reason}`)
+  }
+  return { added, discarded, ignored, failed, messagesRead, backfillComplete, restartedForEmptyMedia }
+}
+
+function isAdmin(req, res, next) {
+  const provided = req.headers['x-admin-key']
+  const expected = config.adminSecretKey
+  if (!expected) {
+    return res.status(503).json({ error: 'ADMIN_SECRET_KEY no está configurada en el backend' })
+  }
+  const valid = typeof provided === 'string'
+    && Buffer.byteLength(provided) === Buffer.byteLength(expected)
+    && timingSafeEqual(Buffer.from(provided), Buffer.from(expected))
+  if (!valid) return res.status(401).json({ error: 'Clave de administrador inválida' })
+  next()
+}
+
+async function getNotificationSettings() {
+  const { data, error } = await getAppSetting('discord_notification_settings')
+  if (error) throw new Error(`No se pudo cargar la configuración de notificaciones: ${error.message}`)
+  return { ...DEFAULT_NOTIFICATION_SETTINGS, ...(data || {}) }
 }
 
 async function fillCurrent(category) {
@@ -149,6 +214,59 @@ app.get('/api/titles', async (req, res) => {
   }
 })
 
+app.delete('/api/admin/titles/:id', isAdmin, async (req, res) => {
+  try {
+    const { data, error } = await deleteMediaById(req.params.id)
+    if (error) return res.status(500).json({ error: error.message })
+    if (!data) return res.status(404).json({ error: 'El título no existe o ya fue eliminado.' })
+    res.json({ ok: true, id: data.id })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+app.patch('/api/admin/titles/:id/correction', isAdmin, async (req, res) => {
+  const { category } = req.body || {}
+  const queryTitle = typeof req.body?.queryTitle === 'string'
+    ? req.body.queryTitle.trim()
+    : ''
+  if (!CATEGORIES.includes(category)) {
+    return res.status(400).json({ error: `category debe ser uno de: ${CATEGORIES.join(', ')}` })
+  }
+  if (queryTitle.length > 200) {
+    return res.status(400).json({ error: 'queryTitle no puede superar 200 caracteres.' })
+  }
+
+  try {
+    const { data: existing, error: lookupError } = await getById(req.params.id)
+    if (lookupError) return res.status(500).json({ error: lookupError.message })
+    if (!existing) return res.status(404).json({ error: 'El título no existe.' })
+
+    const meta = await getSuggestionMeta(queryTitle || existing.title, category)
+    const { data, error } = await updateTitleCorrection(req.params.id, category, meta)
+    if (error) return res.status(500).json({ error: error.message })
+    if (!data) return res.status(404).json({ error: 'El título ya no existe.' })
+    res.json({
+      ok: true,
+      title: meta?.title || existing.title,
+      category,
+      metadataUpdated: Boolean(meta),
+    })
+  } catch (err) {
+    res.status(502).json({ error: `No se pudo corregir el título: ${err.message}` })
+  }
+})
+
+app.post('/api/admin/titles/reshuffle', isAdmin, async (_req, res) => {
+  try {
+    const { data, error } = await reshuffleActiveTitles(MACHINE_SIZE)
+    if (error) return res.status(500).json({ error: error.message })
+    res.json({ ok: true, ...data, preservedWatched: true })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 app.patch('/api/capsules/:id/consume', async (req, res) => {
   try {
     const { id } = req.params
@@ -160,12 +278,18 @@ app.patch('/api/capsules/:id/consume', async (req, res) => {
     if (updErr) return res.status(500).json({ error: updErr.message })
 
     // Notificar por webhook de Discord (no-bloqueante; si falla no rompe la respuesta)
-    if (webhookEnabled) {
+    let notificationSettings = null
+    try {
+      notificationSettings = await getNotificationSettings()
+    } catch (err) {
+      console.error('[webhook] no se pudo cargar su configuración:', err.message)
+    }
+    if (notificationSettings?.enabled) {
       sendDiscordWebhookNotification({
         ...consumed,
         category: consumed.category || null,
         status: 'WATCHED',
-      }).catch((err) => console.error('[webhook] error inesperado:', err.message))
+      }, notificationSettings).catch((err) => console.error('[webhook] error inesperado:', err.message))
     }
 
     // Rellenar la máquina con el siguiente PENDING más antiguo de la misma categoría
@@ -197,42 +321,95 @@ app.get('/api/history', async (req, res) => {
   }
 })
 
-app.post('/api/sync-discord', async (req, res) => {
+app.post('/api/sync-discord', isAdmin, async (req, res) => {
   try {
-    const { added } = await syncDiscord()
-    res.json({ ok: true, added })
+    const result = await syncDiscord()
+    res.json({ ok: true, ...result })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
 })
 
-app.get('/api/admin/webhook/status', (req, res) => {
-  const key = req.headers['x-admin-key'] || (req.query && req.query.key)
-  if (!config.adminSecretKey || key !== config.adminSecretKey) {
-    return res.status(401).json({ error: 'Clave de administrador inválida' })
-  }
-  res.json({ enabled: webhookEnabled })
-})
-
-app.post('/api/admin/webhook/toggle', (req, res) => {
-  const key = req.headers['x-admin-key'] || (req.body && req.body.key)
-  if (!config.adminSecretKey || key !== config.adminSecretKey) {
-    return res.status(401).json({ error: 'Clave de administrador inválida' })
-  }
-  const desired = req.body && typeof req.body.enabled === 'boolean'
-    ? req.body.enabled
-    : !webhookEnabled
-  webhookEnabled = desired
-  console.log(`[webhook] Envío de notificaciones: ${webhookEnabled ? 'ACTIVADO' : 'DESACTIVADO'}`)
-  res.json({ ok: true, enabled: webhookEnabled })
-})
-
-app.post('/api/admin/reset', async (req, res) => {
+app.get('/api/admin/notifications', isAdmin, async (req, res) => {
   try {
-    const key = req.headers['x-admin-key'] || (req.body && req.body.key)
-    if (!config.adminSecretKey || key !== config.adminSecretKey) {
-      return res.status(401).json({ error: 'Clave de administrador inválida' })
+    const settings = await getNotificationSettings()
+    res.json({ enabled: settings.enabled, settings })
+  } catch (err) {
+    res.status(503).json({ error: err.message })
+  }
+})
+
+app.post('/api/admin/notifications/settings', isAdmin, async (req, res) => {
+  const validation = validateNotificationSettings(req.body)
+  if (validation.error) return res.status(400).json({ error: validation.error })
+  try {
+    const { data: current, error: loadError } = await getAppSetting('discord_notification_settings')
+    if (loadError) throw new Error(loadError.message)
+    const settings = {
+      ...DEFAULT_NOTIFICATION_SETTINGS,
+      ...(current || {}),
+      ...validation.settings,
     }
+    const { error } = await setAppSetting('discord_notification_settings', settings)
+    if (error) throw new Error(error.message)
+    res.json({ settings })
+  } catch (err) {
+    res.status(503).json({ error: `No se pudo guardar la configuración: ${err.message}` })
+  }
+})
+
+app.post('/api/admin/notifications/toggle', isAdmin, async (req, res) => {
+  if (typeof req.body?.enabled !== 'boolean') {
+    return res.status(400).json({ error: 'El campo enabled debe ser booleano' })
+  }
+  try {
+    const { data: current, error: loadError } = await getAppSetting('discord_notification_settings')
+    if (loadError) throw new Error(loadError.message)
+    const settings = { ...DEFAULT_NOTIFICATION_SETTINGS, ...(current || {}), enabled: req.body.enabled }
+    const { error } = await setAppSetting('discord_notification_settings', settings)
+    if (error) throw new Error(error.message)
+    res.json({ enabled: settings.enabled })
+  } catch (err) {
+    res.status(503).json({ error: `No se pudo guardar el estado del webhook: ${err.message}` })
+  }
+})
+
+app.post('/api/admin/notifications/preview', isAdmin, (req, res) => {
+  const validation = validateNotificationSettings(req.body)
+  if (validation.error) return res.status(400).json({ error: validation.error })
+  try {
+    const payload = buildWebhookPayload({
+      title: 'Título de ejemplo',
+      category: 'series',
+      synopsis: 'Sinopsis de ejemplo para previsualizar el formato.',
+      suggested_by: 'Usuario de ejemplo',
+      image: null,
+    }, validation.settings)
+    res.json({ payload })
+  } catch (err) {
+    res.status(400).json({ error: err.message })
+  }
+})
+
+app.post('/api/admin/notifications/test', isAdmin, async (req, res) => {
+  const validation = validateNotificationSettings(req.body)
+  if (validation.error) return res.status(400).json({ error: validation.error })
+  try {
+    await sendDiscordWebhookNotification({
+      title: 'Prueba de notificación',
+      category: 'series',
+      synopsis: 'Esta es una prueba de tu plantilla de notificaciones.',
+      suggested_by: 'Wotakoi-Catcher',
+      image: null,
+    }, validation.settings)
+    res.json({ ok: true })
+  } catch (err) {
+    res.status(502).json({ error: `No se pudo enviar la prueba: ${err.message}` })
+  }
+})
+
+app.post('/api/admin/reset', isAdmin, async (req, res) => {
+  try {
     const { error } = await resetAll()
     if (error) return res.status(500).json({ error: error.message })
     res.json({ ok: true })
@@ -248,13 +425,13 @@ app.get('/api/health', (req, res) => {
 app.listen(config.port, () => {
   console.log(`Backend escuchando en http://localhost:${config.port}`)
   syncDiscord()
-    .then((r) => console.log(`[sync] ${r.added} obras nuevas desde Discord`))
+    .then((r) => console.log(`[sync] ${r.added} obras nuevas; ${r.messagesRead} mensajes leídos; ${r.discarded.length} descartadas por TMDB; ${r.ignored.length} líneas omitidas; ${r.failed.length} errores; historial ${r.backfillComplete ? 'completo' : 'pendiente'}`))
     .catch((err) => console.error('[sync] error inicial:', err.message))
 
   if (config.refreshIntervalMin > 0) {
     cron.schedule(`*/${config.refreshIntervalMin} * * * *`, () => {
       syncDiscord()
-        .then((r) => console.log(`[sync] cron: ${r.added} obras nuevas`))
+        .then((r) => console.log(`[sync] cron: ${r.added} obras nuevas; ${r.messagesRead} mensajes leídos; ${r.discarded.length} descartadas por TMDB; ${r.ignored.length} líneas omitidas; ${r.failed.length} errores; historial ${r.backfillComplete ? 'completo' : 'pendiente'}`))
         .catch((err) => console.error('[sync] error cron:', err.message))
     })
     console.log(`Auto-refresco cada ${config.refreshIntervalMin} min`)

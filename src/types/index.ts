@@ -17,6 +17,21 @@ export interface AnimeEntry {
 
 export type MachineKey = 'anime' | 'movie' | 'series' | 'mix'
 
+export type MarqueeVariant = 'manga' | 'broadway' | 'tv' | 'glitch'
+
+export type DomeEffect = 'scanlines' | 'glitchbars' | 'none'
+
+export interface MachineTheme {
+  marqueeVariant: MarqueeVariant
+  marqueeBg: string
+  marqueeText: string
+  marqueeAccent: string
+  cabinetBg: string
+  domeEffect: DomeEffect
+  domeBg: string
+  controlsAccent: string
+}
+
 export interface MachineDef {
   key: MachineKey
   label: string
@@ -26,6 +41,7 @@ export interface MachineDef {
   main: string
   dark: string
   light: string
+  theme: MachineTheme
 }
 
 export type MachineState = 'idle' | 'moving_x' | 'moving_y_down' | 'grabbing' | 'moving_y_up' | 'returning' | 'dropping' | 'dispensed' | 'empty'

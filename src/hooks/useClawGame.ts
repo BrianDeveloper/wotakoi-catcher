@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { MACHINES } from '../constants/machineThemes'
 import { REFRESH_INTERVAL_MIN } from '../constants/game'
-import { resetMachine } from '../lib/api'
+import { correctTitle as correctTitleRequest, deleteTitle as deleteTitleRequest, resetMachine, reshuffleMachine } from '../lib/api'
+import type { ReshuffleResult, TitleCorrectionResult } from '../lib/api'
 import { useMachineData } from './useMachineData'
 import { useClawAnimation } from './useClawAnimation'
 import { useClawPayout } from './useClawPayout'
@@ -12,6 +13,7 @@ import type { MachineKey } from '../types'
 export function useClawGame() {
   const [categoryFilter, setCategoryFilter] = useState<MachineKey>('anime')
   const [resetting, setResetting] = useState(false)
+  const [reshuffling, setReshuffling] = useState(false)
   const [slideDir, setSlideDir] = useState<'left' | 'right'>('right')
   const [historyOpen, setHistoryOpen] = useState(false)
 
@@ -49,8 +51,8 @@ export function useClawGame() {
   const library = useTitlesLibrary()
 
   // Sincronizar con el canal de sugerencias y refrescar la máquina activa con lo nuevo
-  const syncDiscord = useCallback(async () => {
-    const ok = await discordSync.syncNow()
+  const syncDiscord = useCallback(async (adminKey: string) => {
+    const ok = await discordSync.syncNow(adminKey)
     if (ok) await reload(categoryFilter, true)
   }, [discordSync.syncNow, reload, categoryFilter])
 
@@ -74,17 +76,51 @@ export function useClawGame() {
 
   const closeHistory = useCallback(() => setHistoryOpen(false), [])
 
-  const handleAdminReset = useCallback(async () => {
+  const handleAdminReset = useCallback(async (adminKey: string) => {
     if (!window.confirm('¿Resetear todas las cápsulas a PENDING? La máquina se rellenará con 30 premios.')) return
     setResetting(true)
     try {
-      await resetMachine()
+      await resetMachine(adminKey)
       payout.resetSession()
       await reload(categoryFilter, true)
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Error al resetear')
     } finally {
       setResetting(false)
+    }
+  }, [payout.resetSession, reload, categoryFilter])
+
+  const handleDeleteTitle = useCallback(async (adminKey: string, id: string) => {
+    await deleteTitleRequest(adminKey, id)
+    payout.resetSession()
+    await Promise.all([reload(categoryFilter, true), refreshHistory()])
+  }, [payout.resetSession, reload, categoryFilter, refreshHistory])
+
+  const handleCorrectTitle = useCallback(async (
+    adminKey: string,
+    id: string,
+    category: string,
+    queryTitle: string,
+  ): Promise<TitleCorrectionResult> => {
+    const result = await correctTitleRequest(adminKey, id, category, queryTitle)
+    payout.resetSession()
+    await Promise.all([reload(categoryFilter, true), refreshHistory()])
+    return result
+  }, [payout.resetSession, reload, categoryFilter, refreshHistory])
+
+  const handleAdminReshuffle = useCallback(async (adminKey: string): Promise<ReshuffleResult | null> => {
+    if (!window.confirm('¿Volver a sortear las máquinas? Se redistribuirán al azar los títulos pendientes y en máquina; los ya consumidos y su historial se conservarán.')) return null
+    setReshuffling(true)
+    try {
+      const result = await reshuffleMachine(adminKey)
+      payout.resetSession()
+      await reload(categoryFilter, true)
+      return result
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Error al sortear de nuevo')
+      return null
+    } finally {
+      setReshuffling(false)
     }
   }, [payout.resetSession, reload, categoryFilter])
 
@@ -104,6 +140,7 @@ export function useClawGame() {
     modalAnime: payout.modalAnime,
     isShaking: payout.isShaking,
     resetting,
+    reshuffling,
     slideDir,
     activeMachine,
     clawXControls: anim.clawXControls,
@@ -119,11 +156,20 @@ export function useClawGame() {
     handleOpenCapsule: payout.handleOpenCapsule,
     handleCloseModal: payout.handleCloseModal,
     handleAdminReset,
+    handleAdminReshuffle,
+    handleDeleteTitle,
+    handleCorrectTitle,
     openHistory,
     closeHistory,
     syncDiscord,
     syncing: discordSync.syncing,
     lastSyncAdded: discordSync.lastAdded,
+    lastSyncMessagesRead: discordSync.lastMessagesRead,
+    syncBackfillComplete: discordSync.backfillComplete,
+    syncRestartedForEmptyMedia: discordSync.restartedForEmptyMedia,
+    lastSyncIgnored: discordSync.lastIgnored,
+    lastSyncDiscarded: discordSync.lastDiscarded,
+    lastSyncFailures: discordSync.lastFailures,
     lastSyncError: discordSync.lastError,
     titles: library.titles,
     libraryOpen: library.open,

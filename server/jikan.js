@@ -70,6 +70,14 @@ function normalizeCompare(str) {
     .trim()
 }
 
+export function normalizeTMDBSearchQuery(title) {
+  const query = String(title || '').trim()
+  const alternateTitle = query.match(/^(.+?)\s*\(([^()]*)\)\s*$/)
+  const suffix = alternateTitle?.[2].trim() || ''
+  if (!alternateTitle || /\s/.test(suffix) || /^(?:19|20)\d{2}$/.test(suffix)) return query
+  return alternateTitle[1].trim()
+}
+
 // Extrae los tokens "distintivos" (palabras largas que no son stopwords)
 function distinctiveTokens(str) {
   return normalizeCompare(str)
@@ -103,7 +111,7 @@ function nearEqual(a, b) {
 // Puntúa cuán bien coincide un resultado con el término buscado (0-1).
 // Se centra en tokens distintivos para tolerar traducciones/romaji que
 // comparten solo una palabra clave (ej. "Owari no seraph" → "Seraph of the end").
-function titleScore(normQuery, resultTitle) {
+export function titleScore(normQuery, resultTitle) {
   if (!normQuery || !resultTitle) return 0
   const normResult = normalizeCompare(resultTitle)
   if (!normResult) return 0
@@ -163,10 +171,11 @@ async function searchTMDB(query, attempt = 1, maxRetries = 5) {
   if (!TMDB_KEY) {
     throw new Error('TMDB_API_KEY no está configurada en server/.env')
   }
+  const searchQuery = normalizeTMDBSearchQuery(query)
   const params = new URLSearchParams({
     api_key: TMDB_KEY,
     language: TMDB_LANGUAGE,
-    query,
+    query: searchQuery,
   })
   const url = `${TMDB_BASE}/search/multi?${params}`
 
@@ -200,7 +209,7 @@ async function searchTMDB(query, attempt = 1, maxRetries = 5) {
   let results = (data?.results || [])
     .filter((r) => r && (r.media_type === 'tv' || r.media_type === 'movie'))
 
-  const normQuery = normalizeCompare(query)
+  const normQuery = normalizeCompare(searchQuery)
   const STRONG = 0.8
 
   // Search in Mexican Spanish first so TMDB returns its localized display title.
@@ -211,7 +220,7 @@ async function searchTMDB(query, attempt = 1, maxRetries = 5) {
   if (best.score < STRONG) {
     const langs = ['es-ES', 'en-US', 'ja-JP']
     const fetched = await Promise.allSettled(
-      langs.map((lang) => searchOneLanguage(query, lang)),
+      langs.map((lang) => searchOneLanguage(searchQuery, lang)),
     )
     for (const r of fetched) {
       if (r.status === 'fulfilled') results.push(...r.value)
