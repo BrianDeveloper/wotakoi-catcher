@@ -5,11 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently --names SERVER,CLIENT --prefix-colors yellow,cyan \"node server/index.js\" \"vite\"",
-    "dev:bot": "node server/bot.js",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "server": "node server/index.js",
-    "bot": "node server/bot.js",
+    "register:discord": "node server/registerDiscordCommands.js",
     "test": "node --test server/*.test.js"
   },
   "dependencies": {

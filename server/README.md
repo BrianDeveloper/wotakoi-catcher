@@ -2,29 +2,28 @@
 
 ## Desarrollo local
 
-1. Copia `.env.example` a `.env` y completa las credenciales necesarias.
+1. Copia `server/.env.example` a `server/.env` y completa las credenciales.
 2. Ejecuta `npm run dev` para iniciar la API y la interfaz.
-3. En otra terminal, ejecuta `npm run dev:bot` para iniciar el bot de Discord.
+3. Configura el endpoint de interacciones de Discord como `http://localhost:4000/api/discord/interactions` solo si usas un túnel HTTPS público para pruebas locales.
 
-El bot y el servidor web son procesos independientes. Cerrar la interfaz o reiniciar la API no detiene `/sugerir` mientras el proceso del bot siga activo.
+`/sugerir` funciona mediante interacciones HTTP; no necesita una conexión Gateway ni un proceso de bot separado.
 
-## Despliegue
+## Configuración de Discord
 
-Despliega la API con `npm run server` y el bot como un worker persistente separado con `npm run bot`. Configura reinicio automático del worker y entrega a cada proceso sus variables desde `server/.env.example`. El bot requiere `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `DISCORD_GUILD_ID`, `SUPABASE_URL` y `SUPABASE_ANON_KEY`; la API necesita además `SUPABASE_SERVICE_ROLE_KEY` para los ajustes y el cursor del canal.
+1. En Discord Developer Portal, abre la aplicación y copia **Public Key** de **General Information** a `DISCORD_PUBLIC_KEY`.
+2. Configura `DISCORD_TOKEN`, `DISCORD_CLIENT_ID` y `DISCORD_GUILD_ID` en `server/.env`.
+3. Con la API accesible, configura **Interactions Endpoint URL** como `https://TU-DOMINIO/api/discord/interactions`. Discord valida la URL enviando un `PING`; el backend verifica la firma Ed25519 y responde `PONG`.
+4. Registra el comando del servidor una vez desde el proyecto: `npm run register:discord`.
 
-No uses la clave de servicio de Supabase en Vite ni en variables `VITE_*`. Antes de desplegar, ejecuta el SQL de `migrations/001_app_settings.sql`.
+El endpoint valida la firma con el cuerpo HTTP original y rechaza solicitudes con firma inválida o timestamp vencido. `/sugerir` confirma la interacción de inmediato y completa la respuesta después de guardar la obra. No compartas `DISCORD_TOKEN` ni la clave de servicio de Supabase.
 
-GitHub Pages solo publica archivos estáticos y no puede ejecutar `npm run bot`, mantener el Gateway de Discord conectado ni ejecutar la API. Puedes alojar el frontend ahí, pero el worker/API deben estar en un servicio de backend con procesos persistentes.
+## Despliegue y costos
 
-En el proveedor de hosting crea un servicio **Worker/Background Worker** desde este repositorio con:
+El modo HTTP elimina la necesidad de pagar por un **worker persistente del Gateway**, pero Discord todavía necesita una URL HTTPS pública que ejecute este backend. Puedes desplegar la API en un servicio web o adaptar el endpoint a una plataforma de funciones; el costo y los límites dependen del proveedor. GitHub Pages por sí solo no puede recibir ni procesar interacciones.
 
-- **Comando de build:** `npm ci`
-- **Comando de inicio:** `npm run bot`
-- **Directorio de trabajo:** raíz del repositorio
-- **Reinicio:** automático ante salida o error
-- **Variables:** `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `DISCORD_GUILD_ID`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `TMDB_API_KEY`
+Configura las variables del backend desde `server/.env.example`. Para atender `/sugerir`, el backend necesita `DISCORD_PUBLIC_KEY`, `DISCORD_CLIENT_ID`, `SUPABASE_URL` y `SUPABASE_ANON_KEY`. También requiere `DISCORD_TOKEN`, `DISCORD_GUILD_ID` y `DISCORD_CLIENT_ID` para registrar el comando y sincronizar el canal de sugerencias. La API administrativa necesita además `SUPABASE_SERVICE_ROLE_KEY` y `ADMIN_SECRET_KEY`; no pongas secretos en Vite ni en variables `VITE_*`.
 
-El worker valida sus variables obligatorias y falla al iniciar si faltan, para que el proveedor pueda reportarlo y reiniciarlo. discord.js vuelve a conectar el Gateway tras cortes de red. Mantén además desplegada la API (`npm run server`) para la interfaz y la sincronización de sugerencias.
+Antes de desplegar, ejecuta el SQL de `migrations/001_app_settings.sql`. Mantén la API disponible en el proveedor elegido; los planes gratuitos pueden suspender servicios o tener límites y no garantizan disponibilidad 24/7.
 
 ## Sincronización de sugerencias
 

@@ -1,7 +1,8 @@
 import express from 'express'
 import cron from 'node-cron'
 import config from './config.js'
-import { getTitles, startBot } from './discord.js'
+import { completeDiscordInteraction, getTitles } from './discord.js'
+import { verifyDiscordRequest } from './discordInteractions.js'
 import { sendDiscordWebhookNotification } from './discordWebhook.js'
 import { getAnimesMeta } from './jikan.js'
 import {
@@ -26,6 +27,34 @@ const CATEGORIES = ['anime', 'movie', 'series']
 let webhookEnabled = true
 
 const app = express()
+app.post('/api/discord/interactions', express.raw({ type: 'application/json', limit: '1mb' }), (req, res) => {
+  const validSignature = verifyDiscordRequest({
+    body: req.body,
+    signature: req.get('x-signature-ed25519'),
+    timestamp: req.get('x-signature-timestamp'),
+    publicKey: config.discordPublicKey,
+  })
+  if (!validSignature) return res.sendStatus(401)
+
+  let interaction
+  try {
+    interaction = JSON.parse(req.body.toString('utf8'))
+  } catch {
+    return res.status(400).json({ error: 'Invalid interaction JSON body.' })
+  }
+
+  if (interaction.type === 1) return res.json({ type: 1 })
+  if (interaction.application_id !== config.discordClientId) return res.sendStatus(401)
+  if (interaction.type !== 2
+    || interaction.data?.name !== 'sugerir'
+    || typeof interaction.token !== 'string') {
+    return res.status(400).json({ error: 'Unsupported interaction.' })
+  }
+
+  res.json({ type: 5 })
+  void completeDiscordInteraction(interaction)
+    .catch((error) => console.error('[discord] No se pudo completar la interaccion:', error.message))
+})
 app.use(express.json())
 
 app.use((req, res, next) => {

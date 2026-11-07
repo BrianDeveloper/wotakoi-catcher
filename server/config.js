@@ -10,6 +10,7 @@ const config = {
   discordToken: process.env.DISCORD_TOKEN || '',
   discordClientId: process.env.DISCORD_CLIENT_ID || '',
   discordGuildId: process.env.DISCORD_GUILD_ID || '',
+  discordPublicKey: process.env.DISCORD_PUBLIC_KEY || '',
   discordChannelId: process.env.DISCORD_CHANNEL_ID || '',
   discordWebhookUrl: process.env.DISCORD_WEBHOOK_URL || '',
   discordLimit: Number(process.env.DISCORD_LIMIT) || 100,
