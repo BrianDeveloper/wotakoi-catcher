@@ -3,6 +3,7 @@ import 'dotenv/config'
 const TMDB_BASE = 'https://api.themoviedb.org/3'
 const TMDB_IMG = 'https://image.tmdb.org/t/p/w500'
 const PLACEHOLDER_IMG = 'https://via.placeholder.com/500x750?text=Sin+Imagen'
+export const TMDB_LANGUAGE = 'es-MX'
 const TMDB_KEY = process.env.TMDB_API_KEY || ''
 const GENRE_ANIMATION = 16
 const MATCH_THRESHOLD = 0.5
@@ -145,7 +146,12 @@ function mapGenres(genreIds) {
 }
 
 async function searchOneLanguage(query, language) {
-  const url = `${TMDB_BASE}/search/multi?api_key=${TMDB_KEY}&language=${language}&query=${encodeURIComponent(query)}`
+  const params = new URLSearchParams({
+    api_key: TMDB_KEY,
+    language,
+    query,
+  })
+  const url = `${TMDB_BASE}/search/multi?${params}`
   const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
   if (!res.ok) return []
   const data = await res.json()
@@ -154,7 +160,15 @@ async function searchOneLanguage(query, language) {
 }
 
 async function searchTMDB(query, attempt = 1, maxRetries = 5) {
-  const url = `${TMDB_BASE}/search/multi?api_key=${TMDB_KEY}&language=es-ES&query=${encodeURIComponent(query)}`
+  if (!TMDB_KEY) {
+    throw new Error('TMDB_API_KEY no está configurada en server/.env')
+  }
+  const params = new URLSearchParams({
+    api_key: TMDB_KEY,
+    language: TMDB_LANGUAGE,
+    query,
+  })
+  const url = `${TMDB_BASE}/search/multi?${params}`
 
   let res
   try {
@@ -170,7 +184,9 @@ async function searchTMDB(query, attempt = 1, maxRetries = 5) {
   }
 
   if (!res.ok) {
-    if (res.status === 404) return null
+    if (res.status === 404) {
+      return { item: null, score: 0, bestMatch: null }
+    }
     if (attempt <= maxRetries) {
       const wait = Math.min(1000 * attempt, 8000)
       console.warn(`[tmdb] reintento "${query}" (HTTP ${res.status}, ${attempt}/${maxRetries}) en ${wait}ms`)
@@ -187,15 +203,13 @@ async function searchTMDB(query, attempt = 1, maxRetries = 5) {
   const normQuery = normalizeCompare(query)
   const STRONG = 0.8
 
-  // Mejor score sólido con la búsqueda es-ES (ahorra llamadas en títulos claros)
+  // Search in Mexican Spanish first so TMDB returns its localized display title.
   const initialBest = pickBest(normQuery, results)
   let best = initialBest
 
-  // Si la coincidencia no es sólida, consultar otros idiomas y fusionar.
-  // Cubre traducciones/español latino/romaji japonés que difieren del título es-ES
-  // (ej. "Owari no seraph" → es-MX lo tiene como romaji exacto).
+  // Search other locales only to identify the work; display metadata stays es-MX.
   if (best.score < STRONG) {
-    const langs = ['es-MX', 'en-US', 'ja-JP']
+    const langs = ['es-ES', 'en-US', 'ja-JP']
     const fetched = await Promise.allSettled(
       langs.map((lang) => searchOneLanguage(query, lang)),
     )
@@ -205,12 +219,69 @@ async function searchTMDB(query, attempt = 1, maxRetries = 5) {
     best = pickBest(normQuery, results)
   }
 
-  if (!best.item || best.score < MATCH_THRESHOLD) {
-    console.warn(`[tmdb] "${query}" no coincide con ninguna obra (mejor score ${best.score.toFixed(2)}); se descarta.`)
-    return null
+  return {
+    item: best.item && best.score >= MATCH_THRESHOLD ? best.item : null,
+    score: best.score,
+    bestMatch: best.item ? getDisplayTitle(best.item) : null,
   }
+}
 
-  return best.item
+export function selectMexicanSpanishMetadata(item, localizedDetails) {
+  const translation = localizedDetails?.translations?.translations?.find(
+    (entry) => entry.iso_3166_1 === 'MX'
+      && entry.iso_639_1 === 'es'
+      && (entry.data?.title || entry.data?.name),
+  )
+  const title = localizedDetails?.title
+    || localizedDetails?.name
+    || translation?.data?.title
+    || translation?.data?.name
+    || item.title
+    || item.name
+    || item.original_title
+    || item.original_name
+    || ''
+
+  return {
+    title,
+    synopsis: localizedDetails?.overview || '',
+  }
+}
+
+async function fetchMexicanSpanishMetadata(item) {
+  const params = new URLSearchParams({
+    api_key: TMDB_KEY,
+    language: TMDB_LANGUAGE,
+    append_to_response: 'translations',
+  })
+  const response = await fetch(
+    `${TMDB_BASE}/${item.media_type}/${item.id}?${params}`,
+    { signal: AbortSignal.timeout(15000) },
+  )
+  if (!response.ok) {
+    throw new Error(`TMDB details error: ${response.status} ${response.statusText}`)
+  }
+  return selectMexicanSpanishMetadata(item, await response.json())
+}
+
+export function explainMatchRejection(title, match) {
+  const score = Number(match.score.toFixed(2))
+  if (!match.bestMatch) {
+    return {
+      title,
+      reason: 'TMDB no devolvió resultados en los idiomas consultados.',
+      bestMatch: null,
+      score,
+      threshold: MATCH_THRESHOLD,
+    }
+  }
+  return {
+    title,
+    reason: `La mejor coincidencia quedó por debajo del mínimo requerido (${MATCH_THRESHOLD.toFixed(2)}).`,
+    bestMatch: match.bestMatch,
+    score,
+    threshold: MATCH_THRESHOLD,
+  }
 }
 
 // Agrupa resultados por id, fusiona variantes de título y puntúa contra el query
@@ -249,48 +320,39 @@ async function getAnimeMeta(entry, attempt = 1, maxRetries = 5, categoryOverride
   const entryId = typeof entry === 'object' ? entry.id : undefined
   const createdAt = typeof entry === 'object' ? entry.createdAt : undefined
   const override = categoryOverride || (typeof entry === 'object' ? entry.category : undefined)
-  const item = await searchTMDB(title, attempt, maxRetries)
-  if (!item) {
-    console.warn(`[tmdb] "${title}" sin coincidencia válida; se omite.`)
-    return null
-  }
+  const match = await searchTMDB(title, attempt, maxRetries)
+  if (!match.item) return { anime: null, rejection: explainMatchRejection(title, match) }
+  const item = match.item
+  const localized = await fetchMexicanSpanishMetadata(item)
 
   const genres = mapGenres(item.genre_ids)
   const visibleGenres = genres.slice(0, 2)
   const hasMoreGenres = genres.length > 2
 
-  // Fallback: si overview en español está vacío, buscar en inglés
-  let synopsis = (item.overview || '').replace(/\s+/g, ' ').trim()
-  if (!synopsis && TMDB_KEY) {
-    try {
-      const enUrl = `${TMDB_BASE}/${item.media_type}/${item.id}?api_key=${TMDB_KEY}&language=en-US`
-      const enRes = await fetch(enUrl, { signal: AbortSignal.timeout(10000) })
-      if (enRes.ok) {
-        const enData = await enRes.json()
-        synopsis = (enData.overview || '').replace(/\s+/g, ' ').trim()
-      }
-    } catch {}
-  }
-  if (!synopsis) synopsis = 'Sinopsis no disponible.'
+  const synopsis = localized.synopsis.replace(/\s+/g, ' ').trim() || 'Sinopsis no disponible.'
 
   return {
-    id: entryId || hashId(title),
-    title: getDisplayTitle(item),
-    genre: genres.length
-      ? (visibleGenres.join(' / ') + (hasMoreGenres ? ' +' + (genres.length - 2) : ''))
-      : 'Sin género',
-    allGenres: genres.join(' / '),
-    image: posterUrl(item.poster_path),
-    synopsis,
-    capsuleColor: hashColor(title),
-    category: override || deriveCategory(item),
-    createdAt: createdAt || null,
+    anime: {
+      id: entryId || hashId(title),
+      title: localized.title || getDisplayTitle(item),
+      genre: genres.length
+        ? (visibleGenres.join(' / ') + (hasMoreGenres ? ' +' + (genres.length - 2) : ''))
+        : 'Sin género',
+      allGenres: genres.join(' / '),
+      image: posterUrl(item.poster_path),
+      synopsis,
+      capsuleColor: hashColor(title),
+      category: override || deriveCategory(item),
+      createdAt: createdAt || null,
+    },
+    rejection: null,
   }
 }
 
 // Enriquecer una sugerencia guardada: prioriza la categoría elegida por el usuario
 export async function getSuggestionMeta(title, category) {
-  return getAnimeMeta({ title }, 1, 5, category)
+  const result = await getAnimeMeta({ title }, 1, 5, category)
+  return result.anime
 }
 
 function hashId(title) {
@@ -304,6 +366,7 @@ const CONCURRENCY = 5
 export async function getAnimesMeta(titles) {
   const results = []
   const discarded = []
+  const failed = []
   let index = 0
 
   const worker = async () => {
@@ -312,11 +375,18 @@ export async function getAnimesMeta(titles) {
       const entry = titles[current]
       const displayTitle = typeof entry === 'string' ? entry : entry.title
       try {
-        const anime = await getAnimeMeta(entry)
+        const { anime, rejection } = await getAnimeMeta(entry)
         if (anime) results.push(anime)
-        else discarded.push(displayTitle)
+        else discarded.push(rejection || {
+          title: displayTitle,
+          reason: 'TMDB no aceptó el resultado por un motivo no especificado.',
+          bestMatch: null,
+          score: 0,
+          threshold: MATCH_THRESHOLD,
+        })
       } catch (err) {
         console.warn(`[tmdb] fallo al buscar "${displayTitle}":`, err.message)
+        failed.push({ title: displayTitle, reason: err.message })
       }
     }
   }
@@ -324,5 +394,5 @@ export async function getAnimesMeta(titles) {
   const workers = Array.from({ length: Math.min(CONCURRENCY, titles.length) }, () => worker())
   await Promise.all(workers)
 
-  return { animes: results, discarded }
+  return { animes: results, discarded, failed }
 }

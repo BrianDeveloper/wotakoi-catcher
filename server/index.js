@@ -218,7 +218,6 @@ app.get('/api/health', (req, res) => {
 
 app.listen(config.port, () => {
   console.log(`Backend escuchando en http://localhost:${config.port}`)
-  startBot()
   syncDiscord()
     .then((r) => console.log(`[sync] ${r.added} obras nuevas desde Discord`))
     .catch((err) => console.error('[sync] error inicial:', err.message))

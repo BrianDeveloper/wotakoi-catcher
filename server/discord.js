@@ -1,93 +1,39 @@
 import config from './config.js'
-import {
-  Client,
-  GatewayIntentBits,
-  Events,
-  REST,
-  Routes,
-  SlashCommandBuilder,
-  EmbedBuilder,
-} from 'discord.js'
+import { Client, GatewayIntentBits, Events, REST, Routes, SlashCommandBuilder, EmbedBuilder } from 'discord.js'
 import { insertSuggestion, updateMeta } from './supabase.js'
 import { getSuggestionMeta } from './jikan.js'
+import { extractSuggestionEntries } from './suggestionParser.js'
 
-const DISCORD_API = 'https://discord.com/api/v10'
-
-async function fetchMessages(limit = config.discordLimit) {
+export async function getTitles() {
   if (!config.discordToken || !config.discordChannelId) {
     throw new Error('Faltan DISCORD_TOKEN o DISCORD_CHANNEL_ID en server/.env')
   }
 
-  const url = `${DISCORD_API}/channels/${config.discordChannelId}/messages?limit=${limit}`
-  const res = await fetch(url, {
-    headers: {
-      Authorization: `Bot ${config.discordToken}`,
+  const limit = Math.max(1, Math.min(Number(config.discordLimit) || 100, 100))
+  const response = await fetch(
+    `https://discord.com/api/v10/channels/${config.discordChannelId}/messages?limit=${limit}`,
+    {
+      headers: { Authorization: `Bot ${config.discordToken}` },
+      signal: AbortSignal.timeout(15000),
     },
-  })
-
-  if (!res.ok) {
-    throw new Error(`Discord API error: ${res.status} ${res.statusText}`)
+  )
+  if (!response.ok) {
+    throw new Error(`Discord API error: ${response.status} ${response.statusText}`)
   }
 
-  return res.json()
-}
-
-function normalizeTitle(raw) {
-  return raw
-    .replace(/[*_`~]/g, '')
-    .replace(/^[\s#>-]+/, '')
-    .trim()
-}
-
-function slugify(title) {
-  return title
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
+  const messages = await response.json()
+  if (!Array.isArray(messages)) throw new Error('Discord devolvió una respuesta de mensajes inválida')
+  return extractSuggestionEntries(messages).entries
 }
 
 // Limpia el título para búsquedas en APIs: quita emojis/unicodes/símbolos extraños
 function sanitizeTitle(raw) {
-  return normalizeTitle(String(raw || '')
-    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, '')) // emojis
+  return String(raw || '')
+    .replace(/[*_`~]/g, '')
+    .replace(/^\s*[-*+•]\s+/, '')
+    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, '') // emojis
     .replace(/\s+/g, ' ')
     .trim()
-}
-
-function extractEntries(messages) {
-  const seen = new Set()
-  const entries = []
-
-  for (const msg of messages) {
-    const lines = (msg.content || '').split('\n')
-    for (const line of lines) {
-      const trimmed = line.trim()
-      if (!trimmed) continue
-      if (trimmed.startsWith('#') || trimmed.startsWith('!')) continue
-
-      const title = normalizeTitle(trimmed)
-      if (!title || title.length < 2) continue
-
-      const key = title.toLowerCase()
-      if (seen.has(key)) continue
-      seen.add(key)
-
-      entries.push({
-        id: `${msg.id}-${slugify(title)}`,
-        title,
-        createdAt: msg.timestamp || null,
-      })
-    }
-  }
-
-  return entries
-}
-
-export async function getTitles() {
-  const messages = await fetchMessages()
-  return extractEntries(messages)
 }
 
 // ─── Bot gateway + comando /sugerir ───────────────────────────────────────────
@@ -183,7 +129,16 @@ async function handleSugerir(interaction) {
   await interaction.editReply({ embeds: [embed] })
 }
 
-export function startBot() {
+export async function startBot() {
+  const missing = [
+    ['DISCORD_TOKEN', config.discordToken],
+    ['DISCORD_CLIENT_ID', config.discordClientId],
+    ['DISCORD_GUILD_ID', config.discordGuildId],
+  ].filter(([, value]) => !value).map(([name]) => name)
+  if (missing.length) {
+    throw new Error(`Faltan variables obligatorias del worker: ${missing.join(', ')}`)
+  }
+
   client.once(Events.ClientReady, async (c) => {
     console.log(`[discord] Bot conectado como ${c.user.tag}`)
     try {
@@ -207,12 +162,15 @@ export function startBot() {
   })
 
   client.on(Events.Error, (err) => console.error('[discord] Error de conexión:', err.message))
+  client.on(Events.ShardDisconnect, (_event, shardId) => {
+    console.warn(`[discord] Shard ${shardId} desconectado; discord.js intentará reconectar.`)
+  })
+  client.on(Events.ShardReconnecting, (shardId) => {
+    console.info(`[discord] Reconectando shard ${shardId}.`)
+  })
+  client.on(Events.ShardResume, (shardId, replayedEvents) => {
+    console.info(`[discord] Shard ${shardId} reconectado; ${replayedEvents} eventos recuperados.`)
+  })
 
-  if (config.discordToken) {
-    client.login(config.discordToken).catch((err) => {
-      console.error('[discord] No se pudo iniciar sesión:', err.message)
-    })
-  } else {
-    console.warn('[discord] Falta DISCORD_TOKEN; bot no iniciado.')
-  }
+  await client.login(config.discordToken)
 }

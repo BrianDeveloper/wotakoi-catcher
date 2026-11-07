@@ -133,6 +133,7 @@ export async function updateMeta(id, meta) {
   const { data, error } = await supabase
     .from(TABLE)
     .update({
+      title: meta.title || undefined,
       image: meta.image || null,
       synopsis: meta.synopsis || null,
       genre: meta.genre || null,
