@@ -1,10 +1,16 @@
 import type { ReactNode } from 'react'
 import { useClawMachine } from '../../context/ClawMachineContext'
+import japanFlagUrl from '../../assets/svg/japan-svgrepo-com.svg'
 
 const JAPAN_FLAG = (
-  <span role="img" aria-label="Japan" style={{ fontSize: 22, lineHeight: 1 }}>
-    🇯🇵
-  </span>
+  <img
+    src={japanFlagUrl}
+    alt="Flag of Japan"
+    style={{
+      width: 22,
+      height: 22,
+    }}
+  />
 )
 
 function MovieBulbs({ count, reverse }: { count: number; reverse?: boolean }) {

@@ -6,14 +6,14 @@
 2. Ejecuta `npm run dev` para iniciar la API y la interfaz.
 3. Configura el endpoint de interacciones de Discord como `http://localhost:4000/api/discord/interactions` solo si usas un túnel HTTPS público para pruebas locales.
 
-`/sugerir` funciona mediante interacciones HTTP; no necesita una conexión Gateway ni un proceso de bot separado.
+`/sugerir` y `/titulos` funcionan mediante interacciones HTTP; no necesitan una conexión Gateway ni un proceso de bot separado. `/titulos` muestra la biblioteca en páginas de 20, permite filtrar por categoría y usa botones para navegar.
 
 ## Configuración de Discord
 
 1. En Discord Developer Portal, abre la aplicación y copia **Public Key** de **General Information** a `DISCORD_PUBLIC_KEY`.
 2. Configura `DISCORD_TOKEN`, `DISCORD_CLIENT_ID` y `DISCORD_GUILD_ID` en `server/.env`.
 3. Con la API accesible, configura **Interactions Endpoint URL** como `https://TU-DOMINIO/api/discord/interactions`. Discord valida la URL enviando un `PING`; el backend verifica la firma Ed25519 y responde `PONG`.
-4. Registra el comando del servidor una vez desde el proyecto: `npm run register:discord`.
+4. Registra los comandos del servidor desde el proyecto: `npm run register:discord`. Vuelve a ejecutar este comando cuando agregues o modifiques comandos.
 
 El endpoint valida la firma con el cuerpo HTTP original y rechaza solicitudes con firma inválida o timestamp vencido. `/sugerir` confirma la interacción de inmediato y completa la respuesta después de guardar la obra. No compartas `DISCORD_TOKEN` ni la clave de servicio de Supabase.
 

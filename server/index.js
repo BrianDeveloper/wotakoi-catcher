@@ -63,13 +63,21 @@ app.post('/api/discord/interactions', express.raw({ type: 'application/json', li
 
   if (interaction.type === 1) return res.json({ type: 1 })
   if (interaction.application_id !== config.discordClientId) return res.sendStatus(401)
-  if (interaction.type !== 2
-    || interaction.data?.name !== 'sugerir'
-    || typeof interaction.token !== 'string') {
+  const isSlashCommand = interaction.type === 2
+    && ['sugerir', 'titulos'].includes(interaction.data?.name)
+  const isTitlePageButton = interaction.type === 3
+    && /^titles:(all|anime|movie|series):\d+$/.test(interaction.data?.custom_id || '')
+  if ((!isSlashCommand && !isTitlePageButton) || typeof interaction.token !== 'string') {
     return res.status(400).json({ error: 'Interacción no compatible.' })
   }
 
-  res.json({ type: 5 })
+  if (isTitlePageButton) {
+    res.json({ type: 6 })
+  } else if (interaction.data.name === 'titulos') {
+    res.json({ type: 5, data: { flags: 64 } })
+  } else {
+    res.json({ type: 5 })
+  }
   void completeDiscordInteraction(interaction)
     .catch((error) => console.error('[discord] No se pudo completar la interacción:', error.message))
 })

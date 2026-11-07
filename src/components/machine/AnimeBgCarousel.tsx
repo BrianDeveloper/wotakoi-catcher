@@ -1,7 +1,14 @@
 import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 
-const BACKGROUNDS = [
+const DETECTED_SLIDES = Object.values(
+  import.meta.glob('../../assets/svg/carousel/*.svg', {
+    eager: true,
+    query: '?url',
+    import: 'default',
+  }),
+)
+const FALLBACK_BACKGROUNDS = [
   'radial-gradient(ellipse at 20% 30%, #7c3aed 0, transparent 55%), linear-gradient(135deg, #1e1b4b, #312e81)',
   'radial-gradient(ellipse at 75% 65%, #db2777 0, transparent 50%), linear-gradient(135deg, #312e81, #4c1d95)',
   'radial-gradient(ellipse at 45% 45%, #0891b2 0, transparent 55%), linear-gradient(135deg, #1e1b4b, #581c87)',
@@ -13,12 +20,16 @@ const DRAWING_OPACITY = 1
 const INTERVAL_MS = 7000
 
 export function AnimeBgCarousel() {
+  const backgrounds = DETECTED_SLIDES.length
+    ? DETECTED_SLIDES as string[]
+    : FALLBACK_BACKGROUNDS
+  const usesImageSlides = DETECTED_SLIDES.length > 0
   const [index, setIndex] = useState(0)
 
   useEffect(() => {
-    const id = setInterval(() => setIndex((i) => (i + 1) % BACKGROUNDS.length), INTERVAL_MS)
+    const id = setInterval(() => setIndex((i) => (i + 1) % backgrounds.length), INTERVAL_MS)
     return () => clearInterval(id)
-  }, [])
+  }, [backgrounds.length])
 
   return (
     <div style={{ position: 'absolute', inset: 0, zIndex: 0, overflow: 'hidden', pointerEvents: 'none' }}>
@@ -34,7 +45,9 @@ export function AnimeBgCarousel() {
             inset: 0,
             opacity: DRAWING_OPACITY,
             imageRendering: 'pixelated',
-            background: BACKGROUNDS[index],
+            background: usesImageSlides
+              ? `url(${backgrounds[index]}) center / cover no-repeat`
+              : backgrounds[index],
           }}
         />
       </AnimatePresence>

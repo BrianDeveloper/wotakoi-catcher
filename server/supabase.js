@@ -97,6 +97,21 @@ export async function getAllTitles(category = null, limit = 500) {
   return { data: (data || []).map(mapRowToCapsule), error }
 }
 
+export async function getAllTitlesPage(category = null, page = 1, pageSize = 20) {
+  if (!supabase) return { data: null, error: 'sin supabase', count: 0 }
+
+  const offset = (page - 1) * pageSize
+  let query = supabase
+    .from(TABLE)
+    .select('*', { count: 'exact' })
+    .order('created_at', { ascending: false })
+    .range(offset, offset + pageSize - 1)
+  if (category) query = query.eq('category', category)
+
+  const { data, error, count } = await query
+  return { data: (data || []).map(mapRowToCapsule), error, count: count || 0 }
+}
+
 export async function getPendingOldest(limit = 30) {
   if (!supabase) return { data: null, error: 'sin supabase' }
   const { data, error } = await supabase

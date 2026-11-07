@@ -1,8 +1,9 @@
 import config from './config.js'
 import { REST, Routes, SlashCommandBuilder } from 'discord.js'
-import { insertSuggestion, updateMeta } from './supabase.js'
+import { getAllTitlesPage, insertSuggestion, updateMeta } from './supabase.js'
 import { getSuggestionMeta } from './jikan.js'
 import { extractSuggestionEntries } from './suggestionParser.js'
+import { createTitleListResponse, TITLE_LIST_PAGE_SIZE } from './discordTitleList.js'
 
 const CATEGORY_META = {
   anime: { emoji: '🍥', label: 'Anime' },
@@ -23,6 +24,19 @@ export const suggestionCommand = new SlashCommandBuilder()
         { name: 'Anime', value: 'anime' },
         { name: 'Película', value: 'movie' },
         { name: 'Serie', value: 'series' }))
+
+export const titlesCommand = new SlashCommandBuilder()
+  .setName('titulos')
+  .setDescription('Consulta los títulos registrados en la máquina')
+  .addStringOption((option) =>
+    option.setName('categoria')
+        .setDescription('Filtra por categoría')
+        .setRequired(false)
+        .addChoices(
+          { name: 'Todas', value: 'all' },
+          { name: 'Anime', value: 'anime' },
+          { name: 'Película', value: 'movie' },
+          { name: 'Serie', value: 'series' }))
 
 export async function getTitles() {
   if (!config.discordToken || !config.discordChannelId) {
@@ -58,9 +72,9 @@ export async function registerDiscordCommands() {
   const rest = new REST({ version: '10' }).setToken(config.discordToken)
   await rest.put(
     Routes.applicationGuildCommands(config.discordClientId, config.discordGuildId),
-    { body: [suggestionCommand.toJSON()] },
+    { body: [suggestionCommand.toJSON(), titlesCommand.toJSON()] },
   )
-  console.log('[discord] Comando /sugerir registrado en el servidor.')
+  console.log('[discord] Comandos /sugerir y /titulos registrados en el servidor.')
 }
 
 function getOption(interaction, name) {
@@ -130,8 +144,53 @@ async function createSuggestionResponse(interaction) {
   }
 }
 
+function getTitleListRequest(interaction) {
+  if (interaction.type === 3) {
+    const match = /^titles:(all|anime|movie|series):(\d+)$/.exec(interaction.data?.custom_id || '')
+    if (!match) return null
+    const page = Number(match[2])
+    if (!Number.isSafeInteger(page) || page < 1 || page > 10000) return null
+    return { category: match[1] === 'all' ? null : match[1], page }
+  }
+
+  const category = getOption(interaction, 'categoria') || 'all'
+  if (!['all', 'anime', 'movie', 'series'].includes(category)) return null
+  return { category: category === 'all' ? null : category, page: 1 }
+}
+
+async function createTitleListMessage(interaction) {
+  const request = getTitleListRequest(interaction)
+  if (!request) return { content: '⚠️ No se pudo interpretar la página de títulos.', components: [] }
+
+  let result = await getAllTitlesPage(request.category, request.page, TITLE_LIST_PAGE_SIZE)
+  if (result.error) {
+    console.error('[discord] Error al consultar títulos:', result.error.message || result.error)
+    return { content: '❌ No se pudieron consultar los títulos. Inténtalo más tarde.', components: [] }
+  }
+
+  const lastPage = Math.max(1, Math.ceil(result.count / TITLE_LIST_PAGE_SIZE))
+  if (request.page > lastPage) {
+    result = await getAllTitlesPage(request.category, lastPage, TITLE_LIST_PAGE_SIZE)
+    if (result.error) {
+      console.error('[discord] Error al consultar títulos:', result.error.message || result.error)
+      return { content: '❌ No se pudieron consultar los títulos. Inténtalo más tarde.', components: [] }
+    }
+    request.page = lastPage
+  }
+
+  return createTitleListResponse({
+    titles: result.data || [],
+    count: result.count,
+    page: request.page,
+    category: request.category,
+  })
+}
+
 export async function completeDiscordInteraction(interaction) {
-  const response = await createSuggestionResponse(interaction)
+  const response = interaction.type === 3
+    || interaction.data?.name === 'titulos'
+    ? await createTitleListMessage(interaction)
+    : await createSuggestionResponse(interaction)
   const url = `https://discord.com/api/v10/webhooks/${config.discordClientId}/${interaction.token}/messages/@original`
   const result = await fetch(url, {
     method: 'PATCH',
