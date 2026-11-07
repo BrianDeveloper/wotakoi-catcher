@@ -2,6 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   explainMatchRejection,
+  filterTMDBResults,
+  getSearchEndpoint,
   normalizeTMDBSearchQuery,
   selectDisplayTitle,
   selectMexicanSpanishMetadata,
@@ -25,6 +27,28 @@ test('does not accept an unrelated title just because it matches a parenthetical
 
   assert.equal(titleScore(query, 'Get Out'), 1)
   assert.equal(titleScore(query, 'Huye y gana'), 0)
+})
+
+test('rejects a longer title that only contains a single-word query', () => {
+  assert.equal(titleScore('camino', 'Camino'), 1)
+  assert.equal(titleScore('camino', 'Camino al cielo'), 0.35)
+})
+
+test('uses TMDB endpoints based on the selected media category', () => {
+  assert.equal(getSearchEndpoint('movie'), 'movie')
+  assert.equal(getSearchEndpoint('series'), 'tv')
+  assert.equal(getSearchEndpoint('anime'), 'multi')
+})
+
+test('filters TMDB results by requested media type and release year', () => {
+  const results = [
+    { media_type: 'movie', title: 'Camino', release_date: '2008-10-17' },
+    { media_type: 'movie', title: 'Camino al cielo', release_date: '1994-01-01' },
+    { media_type: 'tv', name: 'Camino al cielo', first_air_date: '1984-10-19' },
+  ]
+
+  assert.deepEqual(filterTMDBResults(results, 'movie', 2008), [results[0]])
+  assert.deepEqual(filterTMDBResults(results, 'series', 1984), [results[2]])
 })
 
 test('prefers the localized es-MX detail title and synopsis', () => {

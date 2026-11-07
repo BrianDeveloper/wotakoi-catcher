@@ -37,7 +37,7 @@ En los controles administrativos de la aplicación, introduce `ADMIN_SECRET_KEY`
 
 Desde la biblioteca, la administración conectada puede eliminar títulos. El borrado es permanente e incluye el registro del historial. El botón **Sortear máquinas** vuelve a seleccionar aleatoriamente hasta 30 títulos activos por categoría; el resto queda `PENDING` y los títulos `WATCHED` con su historial no se modifican.
 
-En cada título, selecciona una categoría y pulsa **↻** para guardarla y volver a consultar en TMDB el título localizado, póster y sinopsis. Si TMDB no encuentra una coincidencia confiable, se conserva el título y sus metadatos actuales, pero se aplica la categoría seleccionada. El estado y el historial no cambian.
+En cada título, escribe el nombre para buscar en TMDB, opcionalmente indica el año de estreno, selecciona la categoría y pulsa **↻**. La categoría limita la búsqueda a películas o series y el año filtra los resultados antes de escoger coincidencia. Esto ayuda a resolver títulos ambiguos como «Camino»: usa categoría **Película** y año **2008**. Las búsquedas de una sola palabra tampoco aceptan un título más largo solo por contener esa palabra. Si TMDB no encuentra una coincidencia confiable, se conserva el título y sus metadatos actuales, pero se aplica la categoría seleccionada. El estado y el historial no cambian.
 
 Al buscar en TMDB, un alias de una sola palabra entre paréntesis al final se omite de la búsqueda y se usa el título principal para evitar que esa palabra fuerce una coincidencia incorrecta. Los años como `(2017)` y subtítulos de varias palabras como `(Live Action)` se conservan.
 

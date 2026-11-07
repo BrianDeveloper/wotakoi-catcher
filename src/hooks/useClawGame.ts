@@ -101,8 +101,9 @@ export function useClawGame() {
     id: string,
     category: string,
     queryTitle: string,
+    year?: number,
   ): Promise<TitleCorrectionResult> => {
-    const result = await correctTitleRequest(adminKey, id, category, queryTitle)
+    const result = await correctTitleRequest(adminKey, id, category, queryTitle, year)
     payout.resetSession()
     await Promise.all([reload(categoryFilter, true), refreshHistory()])
     return result

@@ -98,13 +98,14 @@ export async function correctTitle(
   id: string,
   category: string,
   queryTitle?: string,
+  year?: number,
 ): Promise<TitleCorrectionResult> {
   return adminRequest<TitleCorrectionResult>(
     `${ADMIN_TITLES_URL}/${encodeURIComponent(id)}/correction`,
     adminKey,
     {
       method: 'PATCH',
-      body: JSON.stringify({ category, queryTitle }),
+      body: JSON.stringify({ category, queryTitle, year }),
     },
   )
 }

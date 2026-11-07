@@ -39,6 +39,7 @@ export function TitlesDrawer() {
   const [correctingId, setCorrectingId] = useState<string | null>(null)
   const [categorySelections, setCategorySelections] = useState<Record<string, string>>({})
   const [titleQueries, setTitleQueries] = useState<Record<string, string>>({})
+  const [yearQueries, setYearQueries] = useState<Record<string, string>>({})
   const [actionError, setActionError] = useState<string | null>(null)
   const [actionNotice, setActionNotice] = useState<string | null>(null)
 
@@ -84,7 +85,13 @@ export function TitlesDrawer() {
       const current = titles.find((item) => item.id === id)
       const category = categorySelections[id] || current?.category || 'series'
       const queryTitle = titleQueries[id]?.trim() || currentTitle
-      const result = await handleCorrectTitle(adminKey, id, category, queryTitle)
+      const yearText = yearQueries[id]?.trim() || ''
+      const year = yearText ? Number(yearText) : undefined
+      if (year !== undefined && (!Number.isInteger(year) || year < 1870 || year > new Date().getFullYear() + 5)) {
+        setActionError('Escribe un año válido entre 1870 y cinco años en el futuro.')
+        return
+      }
+      const result = await handleCorrectTitle(adminKey, id, category, queryTitle, year)
       setActionNotice(result.metadataUpdated
         ? `Se actualizó "${result.title}" y se guardó su categoría.`
         : `Se guardó la categoría de "${result.title}", pero TMDB no encontró metadatos adecuados.`)
@@ -325,6 +332,28 @@ export function TitlesDrawer() {
                           style={{
                             minWidth: 0,
                             flex: 1,
+                            background: 'var(--c-bg)',
+                            color: 'var(--c-text-main)',
+                            border: `1px solid ${SURFACES.cardBorder}`,
+                            borderRadius: 6,
+                            padding: '4px 5px',
+                            fontSize: 10,
+                          }}
+                        />
+                        <input
+                          type="number"
+                          aria-label={`Año de estreno para buscar ${item.title}`}
+                          value={yearQueries[item.id] ?? ''}
+                          onChange={(event) => setYearQueries((current) => ({
+                            ...current,
+                            [item.id]: event.target.value,
+                          }))}
+                          min={1870}
+                          max={new Date().getFullYear() + 5}
+                          placeholder="Año"
+                          disabled={correctingId !== null || deletingId !== null}
+                          style={{
+                            width: 58,
                             background: 'var(--c-bg)',
                             color: 'var(--c-text-main)',
                             border: `1px solid ${SURFACES.cardBorder}`,

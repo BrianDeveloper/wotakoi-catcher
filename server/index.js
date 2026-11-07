@@ -238,11 +238,16 @@ app.patch('/api/admin/titles/:id/correction', isAdmin, async (req, res) => {
   const queryTitle = typeof req.body?.queryTitle === 'string'
     ? req.body.queryTitle.trim()
     : ''
+  const year = req.body?.year ?? null
   if (!CATEGORIES.includes(category)) {
     return res.status(400).json({ error: `category debe ser uno de: ${CATEGORIES.join(', ')}` })
   }
   if (queryTitle.length > 200) {
     return res.status(400).json({ error: 'queryTitle no puede superar 200 caracteres.' })
+  }
+  if (year !== null
+    && (!Number.isInteger(year) || year < 1870 || year > new Date().getFullYear() + 5)) {
+    return res.status(400).json({ error: 'year debe ser un año válido entre 1870 y cinco años en el futuro.' })
   }
 
   try {
@@ -250,7 +255,7 @@ app.patch('/api/admin/titles/:id/correction', isAdmin, async (req, res) => {
     if (lookupError) return res.status(500).json({ error: lookupError.message })
     if (!existing) return res.status(404).json({ error: 'El título no existe.' })
 
-    const meta = await getSuggestionMeta(queryTitle || existing.title, category)
+    const meta = await getSuggestionMeta(queryTitle || existing.title, category, year)
     const { data, error } = await updateTitleCorrection(req.params.id, category, meta)
     if (error) return res.status(500).json({ error: error.message })
     if (!data) return res.status(404).json({ error: 'El título ya no existe.' })

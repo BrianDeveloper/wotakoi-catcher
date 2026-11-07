@@ -122,6 +122,11 @@ export function titleScore(normQuery, resultTitle) {
   const queryTokens = distinctiveTokens(normQuery)
   const resultTokens = distinctiveTokens(normResult)
 
+  if (queryTokens.length === 1) {
+    const sameToken = resultTokens.some((token) => nearEqual(queryTokens[0], token))
+    return sameToken && resultTokens.length === 1 ? 0.85 : 0.35
+  }
+
   if (queryTokens.length === 0 || resultTokens.length === 0) {
     // Sin tokens distintivos, cae a coincidencia por contención
     if (normResult.includes(normQuery)) return 0.85
@@ -153,41 +158,74 @@ function mapGenres(genreIds) {
     .filter(Boolean)
 }
 
-async function searchOneLanguage(query, language) {
+export function getSearchEndpoint(category) {
+  if (category === 'movie') return 'movie'
+  if (category === 'series') return 'tv'
+  return 'multi'
+}
+
+export function filterTMDBResults(results, category = null, year = null) {
+  return results.filter((result) => {
+    if (category === 'movie' && result.media_type !== 'movie') return false
+    if (category === 'series' && result.media_type !== 'tv') return false
+    if (!year) return true
+
+    const releaseDate = result.media_type === 'movie'
+      ? result.release_date
+      : result.first_air_date
+    return typeof releaseDate === 'string' && releaseDate.startsWith(`${year}-`)
+  })
+}
+
+async function searchOneLanguage(query, language, category, year) {
+  const endpoint = getSearchEndpoint(category)
   const params = new URLSearchParams({
     api_key: TMDB_KEY,
     language,
     query,
   })
-  const url = `${TMDB_BASE}/search/multi?${params}`
+  if (year && endpoint === 'movie') params.set('year', String(year))
+  if (year && endpoint === 'tv') params.set('first_air_date_year', String(year))
+
+  const url = `${TMDB_BASE}/search/${endpoint}?${params}`
   const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
   if (!res.ok) return []
   const data = await res.json()
-  return (data?.results || [])
-    .filter((r) => r && (r.media_type === 'tv' || r.media_type === 'movie'))
+  const results = (data?.results || [])
+    .filter((result) => result && (endpoint !== 'multi'
+      || result.media_type === 'tv'
+      || result.media_type === 'movie'))
+    .map((result) => endpoint === 'multi'
+      ? result
+      : { ...result, media_type: endpoint === 'movie' ? 'movie' : 'tv' })
+  return filterTMDBResults(results, category, year)
 }
 
-async function searchTMDB(query, attempt = 1, maxRetries = 5) {
+async function searchTMDB(query, category, year, attempt = 1, maxRetries = 5) {
   if (!TMDB_KEY) {
     throw new Error('TMDB_API_KEY no está configurada en server/.env')
   }
   const searchQuery = normalizeTMDBSearchQuery(query)
-  const params = new URLSearchParams({
-    api_key: TMDB_KEY,
-    language: TMDB_LANGUAGE,
-    query: searchQuery,
-  })
-  const url = `${TMDB_BASE}/search/multi?${params}`
 
   let res
   try {
-    res = await fetch(url, { signal: AbortSignal.timeout(15000) })
+    const endpoint = getSearchEndpoint(category)
+    const params = new URLSearchParams({
+      api_key: TMDB_KEY,
+      language: TMDB_LANGUAGE,
+      query: searchQuery,
+    })
+    if (year && endpoint === 'movie') params.set('year', String(year))
+    if (year && endpoint === 'tv') params.set('first_air_date_year', String(year))
+    res = await fetch(`${TMDB_BASE}/search/${endpoint}?${params}`, {
+      signal: AbortSignal.timeout(15000),
+    })
   } catch (err) {
     if (attempt <= maxRetries) {
       const wait = Math.min(1000 * attempt, 8000)
       console.warn(`[tmdb] reintento "${query}" por error de red (${attempt}/${maxRetries}) en ${wait}ms`)
       await new Promise((r) => setTimeout(r, wait))
-      return searchTMDB(query, attempt + 1, maxRetries)
+      return searchTMDB(query, category, year, attempt + 1, maxRetries)
     }
     throw new Error(`TMDB network error: ${err.message}`)
   }
@@ -200,14 +238,21 @@ async function searchTMDB(query, attempt = 1, maxRetries = 5) {
       const wait = Math.min(1000 * attempt, 8000)
       console.warn(`[tmdb] reintento "${query}" (HTTP ${res.status}, ${attempt}/${maxRetries}) en ${wait}ms`)
       await new Promise((r) => setTimeout(r, wait))
-      return searchTMDB(query, attempt + 1, maxRetries)
+      return searchTMDB(query, category, year, attempt + 1, maxRetries)
     }
     throw new Error(`TMDB API error: ${res.status} ${res.statusText}`)
   }
 
   const data = await res.json()
+  const endpoint = getSearchEndpoint(category)
   let results = (data?.results || [])
-    .filter((r) => r && (r.media_type === 'tv' || r.media_type === 'movie'))
+    .filter((result) => result && (endpoint !== 'multi'
+      || result.media_type === 'tv'
+      || result.media_type === 'movie'))
+    .map((result) => endpoint === 'multi'
+      ? result
+      : { ...result, media_type: endpoint === 'movie' ? 'movie' : 'tv' })
+  results = filterTMDBResults(results, category, year)
 
   const normQuery = normalizeCompare(searchQuery)
   const STRONG = 0.8
@@ -220,7 +265,7 @@ async function searchTMDB(query, attempt = 1, maxRetries = 5) {
   if (best.score < STRONG) {
     const langs = ['es-ES', 'en-US', 'ja-JP']
     const fetched = await Promise.allSettled(
-      langs.map((lang) => searchOneLanguage(searchQuery, lang)),
+      langs.map((lang) => searchOneLanguage(searchQuery, lang, category, year)),
     )
     for (const r of fetched) {
       if (r.status === 'fulfilled') results.push(...r.value)
@@ -374,12 +419,12 @@ function pickBest(normQuery, rawResults) {
   return { item: bestItem, score: bestScore }
 }
 
-async function getAnimeMeta(entry, attempt = 1, maxRetries = 5, categoryOverride) {
+async function getAnimeMeta(entry, attempt = 1, maxRetries = 5, categoryOverride, year = null) {
   const title = typeof entry === 'string' ? entry : entry.title
   const entryId = typeof entry === 'object' ? entry.id : undefined
   const createdAt = typeof entry === 'object' ? entry.createdAt : undefined
   const override = categoryOverride || (typeof entry === 'object' ? entry.category : undefined)
-  const match = await searchTMDB(title, attempt, maxRetries)
+  const match = await searchTMDB(title, override, year, attempt, maxRetries)
   if (!match.item) return { anime: null, rejection: explainMatchRejection(title, match) }
   const item = match.item
   const localized = await fetchMexicanSpanishMetadata(item, title)
@@ -409,8 +454,8 @@ async function getAnimeMeta(entry, attempt = 1, maxRetries = 5, categoryOverride
 }
 
 // Enriquecer una sugerencia guardada: prioriza la categoría elegida por el usuario
-export async function getSuggestionMeta(title, category) {
-  const result = await getAnimeMeta({ title }, 1, 5, category)
+export async function getSuggestionMeta(title, category, year = null) {
+  const result = await getAnimeMeta({ title }, 1, 5, category, year)
   return result.anime
 }
 
