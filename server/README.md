@@ -6,7 +6,7 @@
 2. Ejecuta `npm run dev` para iniciar la API y la interfaz.
 3. Configura el endpoint de interacciones de Discord como `http://localhost:4000/api/discord/interactions` solo si usas un túnel HTTPS público para pruebas locales.
 
-`/sugerir` y `/titulos` funcionan mediante interacciones HTTP; no necesitan una conexión Gateway ni un proceso de bot separado. `/titulos` muestra la biblioteca en páginas de 20, permite filtrar por categoría y usa botones para navegar.
+`/sugerir`, `/titulos`, `/calificar` y `/ranking` funcionan mediante interacciones HTTP; no necesitan una conexión Gateway ni un proceso de bot separado. `/titulos` muestra la biblioteca en páginas de 20, permite filtrar por categoría y usa botones para navegar.
 
 ## Configuración de Discord
 
@@ -23,7 +23,7 @@ El modo HTTP elimina la necesidad de pagar por un **worker persistente del Gatew
 
 Configura las variables del backend desde `server/.env.example`. Para atender `/sugerir`, el backend necesita `DISCORD_PUBLIC_KEY`, `DISCORD_CLIENT_ID`, `SUPABASE_URL` y `SUPABASE_ANON_KEY`. También requiere `DISCORD_TOKEN`, `DISCORD_GUILD_ID` y `DISCORD_CLIENT_ID` para registrar el comando y sincronizar el canal de sugerencias. La API administrativa necesita además `SUPABASE_SERVICE_ROLE_KEY` y `ADMIN_SECRET_KEY`; no pongas secretos en Vite ni en variables `VITE_*`.
 
-Antes de desplegar, ejecuta el SQL de `migrations/001_app_settings.sql`. Mantén la API disponible en el proveedor elegido; los planes gratuitos pueden suspender servicios o tener límites y no garantizan disponibilidad 24/7.
+Antes de desplegar, ejecuta el SQL de `migrations/001_app_settings.sql` y después el de `migrations/002_media_ratings.sql`. Mantén la API disponible en el proveedor elegido; los planes gratuitos pueden suspender servicios o tener límites y no garantizan disponibilidad 24/7.
 
 ## Sincronización de sugerencias
 
@@ -42,6 +42,14 @@ En cada título, escribe el nombre para buscar en TMDB, opcionalmente indica el 
 Al buscar en TMDB, un alias de una sola palabra entre paréntesis al final se omite de la búsqueda y se usa el título principal para evitar que esa palabra fuerce una coincidencia incorrecta. Los años como `(2017)` y subtítulos de varias palabras como `(Live Action)` se conservan.
 
 Las sugerencias agregadas con `/sugerir` se guardan directamente en `media_items`, no en el canal de sugerencias. Vaciar `media_items` elimina también esas filas; sincronizar el canal solo puede recuperar sugerencias que estén publicadas allí.
+
+## Calificaciones y ranking
+
+`/calificar` permite puntuar de 1 a 10 una obra en estado `WATCHED`, con un comentario opcional. El autocompletado solo muestra obras vistas. Repetir el comando con el mismo usuario actualiza la nota anterior; si se omite el comentario, se conserva el existente. No se pueden calificar obras que sigan `PENDING` o `IN_MACHINE`.
+
+`/ranking` muestra el Top 10 global o filtrado por categoría, con podio para los tres primeros puestos, promedio y cantidad de votos. Las obras con un solo voto también aparecen, indicando su número de votos. El orden desempata por cantidad de votos y luego por título.
+
+En el historial del panel web se muestra el podio y el promedio de cada obra. El formulario de calificación pide el usuario de Discord y lo recuerda en `localStorage`; para que un voto web y uno de Discord cuenten como la misma persona, ambos deben usar exactamente el mismo usuario. Los comentarios se leen en la web; `/ranking` no los incluye. Eliminar un título borra sus calificaciones en cascada.
 
 ## Idioma de metadatos TMDB
 

@@ -1,6 +1,26 @@
 import config from './config.js'
 import { REST, Routes, SlashCommandBuilder } from 'discord.js'
-import { getAllTitlesPage, insertSuggestion, updateMeta } from './supabase.js'
+import {
+  getAllTitlesPage,
+  getById,
+  getRankings,
+  getRatingsForMedia,
+  getWatchStatsById,
+  insertSuggestion,
+  searchWatchedTitles,
+  updateMeta,
+  upsertRating,
+} from './supabase.js'
+import {
+  RANKING_LIMIT,
+  validateRating,
+} from './ratings.js'
+import {
+  buildRankingResponse,
+  buildRatingResponse,
+  calificarCommand,
+  rankingCommand,
+} from './discordRatings.js'
 import { getSuggestionMeta } from './jikan.js'
 import { extractSuggestionEntries } from './suggestionParser.js'
 import { createTitleListResponse, TITLE_LIST_PAGE_SIZE } from './discordTitleList.js'
@@ -72,9 +92,16 @@ export async function registerDiscordCommands() {
   const rest = new REST({ version: '10' }).setToken(config.discordToken)
   await rest.put(
     Routes.applicationGuildCommands(config.discordClientId, config.discordGuildId),
-    { body: [suggestionCommand.toJSON(), titlesCommand.toJSON()] },
+    {
+      body: [
+        suggestionCommand.toJSON(),
+        titlesCommand.toJSON(),
+        calificarCommand.toJSON(),
+        rankingCommand.toJSON(),
+      ],
+    },
   )
-  console.log('[discord] Comandos /sugerir y /titulos registrados en el servidor.')
+  console.log('[discord] Comandos /sugerir, /titulos, /calificar y /ranking registrados en el servidor.')
 }
 
 function getOption(interaction, name) {
@@ -186,11 +213,112 @@ async function createTitleListMessage(interaction) {
   })
 }
 
+async function findWatchedMedia(rawTitle) {
+  const value = String(rawTitle || '').trim()
+  if (!value) return { error: 'No se recibió el título a calificar.' }
+
+  const { data: byId, error: byIdError } = await getById(value)
+  if (!byIdError && byId) return { media: byId }
+
+  const { data: matches, error: searchError } = await searchWatchedTitles(value, 25)
+  if (searchError) return { error: searchError.message || String(searchError) }
+  const list = matches || []
+  const normalized = value.toLowerCase()
+  const exact = list.filter((item) => String(item.title || '').trim().toLowerCase() === normalized)
+  if (exact.length === 1) return { media: exact[0] }
+  if (list.length === 1) return { media: list[0] }
+  if (!list.length) return { error: `No encontramos una obra vista que coincida con «${value}».` }
+  return { ambiguous: list.slice(0, 5) }
+}
+
+async function createRatingResponse(interaction) {
+  const rawTitle = getOption(interaction, 'titulo')
+  const rawComment = getOption(interaction, 'comentario')
+  const user = interaction.member?.user || interaction.user
+  if (!user) return { content: '⚠️ No se pudo identificar a quien califica.' }
+
+  const validation = validateRating({
+    score: getOption(interaction, 'nota'),
+    comment: rawComment,
+    raterName: user.username,
+    source: 'discord',
+  })
+  if (validation.error) return { content: `⚠️ ${validation.error}` }
+
+  const found = await findWatchedMedia(rawTitle)
+  if (found.error) return { content: `⚠️ ${found.error}` }
+  if (found.ambiguous) {
+    const options = found.ambiguous.map((item) => `• ${item.title}`).join('\n')
+    return { content: `⚠️ Hay varias obras que coinciden. Selecciona una desde el autocompletado:\n${options}` }
+  }
+
+  const media = found.media
+  if (media.status !== 'WATCHED') {
+    return { content: `⚠️ **${media.title}** todavía no está marcada como vista, así que aún no se puede calificar.` }
+  }
+
+  const { data: existingRatings, error: ratingsError } = await getRatingsForMedia(media.id)
+  if (ratingsError) {
+    console.error('[discord] Error al consultar calificaciones:', ratingsError.message || ratingsError)
+    return { content: '❌ No se pudieron consultar las calificaciones. Inténtalo más tarde.' }
+  }
+  const previous = (existingRatings || []).find((rating) => rating.raterKey === validation.value.raterKey)
+
+  const { data: saved, error: saveError } = await upsertRating({
+    mediaId: media.id,
+    raterKey: validation.value.raterKey,
+    raterName: validation.value.raterName,
+    discordUserId: user.id,
+    source: 'discord',
+    score: validation.value.score,
+    comment: rawComment === undefined ? undefined : validation.value.comment,
+  })
+  if (saveError) {
+    console.error('[discord] Error al guardar calificación:', saveError.message || saveError)
+    return { content: '❌ No se pudo guardar la calificación. Inténtalo más tarde.' }
+  }
+  if (!saved) {
+    console.error('[discord] La calificación se guardó sin devolver datos.')
+    return { content: '❌ No se pudo confirmar la calificación. Inténtalo más tarde.' }
+  }
+
+  const { data: stats } = await getWatchStatsById(media.id)
+  return buildRatingResponse({
+    media,
+    rating: { score: saved.score, comment: saved.comment },
+    averageScore: stats?.averageScore ?? saved.score,
+    ratingCount: stats?.ratingCount ?? 1,
+    updated: Boolean(previous),
+  })
+}
+
+async function createRankingMessage(interaction) {
+  const requested = getOption(interaction, 'categoria') || 'all'
+  if (!['all', 'anime', 'movie', 'series'].includes(requested)) {
+    return { content: '⚠️ La categoría seleccionada no es válida.' }
+  }
+  const category = requested === 'all' ? null : requested
+  const { data, error } = await getRankings(category, RANKING_LIMIT)
+  if (error) {
+    console.error('[discord] Error al consultar el ranking:', error.message || error)
+    return { content: '❌ No se pudo consultar el ranking. Inténtalo más tarde.' }
+  }
+  return buildRankingResponse({ titles: data || [], category })
+}
+
 export async function completeDiscordInteraction(interaction) {
-  const response = interaction.type === 3
-    || interaction.data?.name === 'titulos'
-    ? await createTitleListMessage(interaction)
-    : await createSuggestionResponse(interaction)
+  const commandName = interaction.data?.name
+  let response
+  if (interaction.type === 3 || commandName === 'titulos') {
+    response = await createTitleListMessage(interaction)
+  } else if (commandName === 'calificar') {
+    response = await createRatingResponse(interaction)
+  } else if (commandName === 'ranking') {
+    response = await createRankingMessage(interaction)
+  } else {
+    response = await createSuggestionResponse(interaction)
+  }
+
   const url = `https://discord.com/api/v10/webhooks/${config.discordClientId}/${interaction.token}/messages/@original`
   const result = await fetch(url, {
     method: 'PATCH',

@@ -1,11 +1,19 @@
 import { MACHINE_QUERY_PARAM } from '../constants/machineThemes'
-import type { AnimeEntry, MachineKey } from '../types'
+import type {
+  AnimeEntry,
+  MachineKey,
+  RankedTitle,
+  RatingDetail,
+  SubmitRatingResult,
+} from '../types'
 
 const MACHINE_URL = 'http://localhost:4000/api/machine/capsules'
 const CONSUME_URL = 'http://localhost:4000/api/capsules'
 const RESET_URL = 'http://localhost:4000/api/admin/reset'
 const HISTORY_URL = 'http://localhost:4000/api/history'
 const TITLES_URL = 'http://localhost:4000/api/titles'
+const RANKINGS_URL = 'http://localhost:4000/api/rankings'
+const RATINGS_URL = 'http://localhost:4000/api/ratings'
 const SYNC_URL = 'http://localhost:4000/api/sync-discord'
 const ADMIN_NOTIFICATIONS_URL = 'http://localhost:4000/api/admin/notifications'
 const ADMIN_TITLES_URL = 'http://localhost:4000/api/admin/titles'
@@ -64,6 +72,48 @@ export async function fetchHistory(): Promise<AnimeEntry[]> {
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   const data = await res.json()
   return data.history || []
+}
+
+export async function fetchRankings(category?: MachineKey | null, limit = 10): Promise<RankedTitle[]> {
+  const params = new URLSearchParams({ limit: String(limit) })
+  if (category && category !== 'mix') params.set('category', category)
+  const res = await fetch(`${RANKINGS_URL}?${params.toString()}`)
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  const data = await res.json()
+  return data.rankings || []
+}
+
+export async function fetchMediaRatings(
+  mediaId: string,
+  raterName?: string,
+): Promise<RatingDetail> {
+  const params = new URLSearchParams()
+  if (raterName?.trim()) params.set('raterName', raterName.trim())
+  const query = params.toString()
+  const res = await fetch(`${RATINGS_URL}/${encodeURIComponent(mediaId)}${query ? `?${query}` : ''}`)
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return res.json()
+}
+
+export async function submitRating({
+  mediaId,
+  raterName,
+  score,
+  comment,
+}: {
+  mediaId: string
+  raterName: string
+  score: number
+  comment?: string
+}): Promise<SubmitRatingResult> {
+  const res = await fetch(RATINGS_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mediaId, raterName, score, comment }),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`)
+  return body as SubmitRatingResult
 }
 
 export async function fetchTitles(category?: MachineKey | null): Promise<AnimeEntry[]> {

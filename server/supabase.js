@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import config from './config.js'
 import { randomizeActiveAssignments } from './randomizeTitles.js'
+import { escapeLikePattern, RANKING_MIN_VOTES } from './ratings.js'
 
 let supabase = null
 let settingsSupabase = null
@@ -19,6 +20,8 @@ if (config.supabaseUrl && config.supabaseServiceRoleKey) {
 
 const TABLE = 'media_items'
 const SETTINGS_TABLE = 'app_settings'
+const RATINGS_TABLE = 'media_ratings'
+const WATCH_STATS_VIEW = 'media_watch_stats'
 
 function mapRowToCapsule(row) {
   if (!row) return null
@@ -35,6 +38,31 @@ function mapRowToCapsule(row) {
     suggested_by: row.suggested_by,
     createdAt: row.created_at,
     consumedAt: row.consumed_at,
+  }
+}
+
+function mapRatingRow(row) {
+  if (!row) return null
+  return {
+    id: row.id,
+    mediaId: row.media_id,
+    raterName: row.rater_name,
+    raterKey: row.rater_key,
+    discordUserId: row.discord_user_id,
+    source: row.source,
+    score: row.score,
+    comment: row.comment,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+function mapWatchStatsRow(row) {
+  if (!row) return null
+  return {
+    ...mapRowToCapsule(row),
+    averageScore: Number(row.average_score) || 0,
+    ratingCount: Number(row.rating_count) || 0,
   }
 }
 
@@ -256,6 +284,95 @@ export async function getConsumedHistory(limit = 100) {
     .order('consumed_at', { ascending: false })
     .limit(limit)
   return { data: (data || []).map(mapRowToCapsule), error }
+}
+
+export async function getWatchHistoryWithStats(limit = 100) {
+  if (!supabase) return { data: null, error: 'sin supabase' }
+  const { data, error } = await supabase
+    .from(WATCH_STATS_VIEW)
+    .select('*')
+    .order('consumed_at', { ascending: false })
+    .limit(limit)
+  return { data: (data || []).map(mapWatchStatsRow), error }
+}
+
+export async function getWatchStatsById(mediaId) {
+  if (!supabase) return { data: null, error: 'sin supabase' }
+  const { data, error } = await supabase
+    .from(WATCH_STATS_VIEW)
+    .select('*')
+    .eq('id', mediaId)
+    .maybeSingle()
+  return { data: mapWatchStatsRow(data), error }
+}
+
+export async function getRankings(category = null, limit = 10) {
+  if (!supabase) return { data: null, error: 'sin supabase' }
+  let query = supabase
+    .from(WATCH_STATS_VIEW)
+    .select('*')
+    .gte('rating_count', RANKING_MIN_VOTES)
+    .order('average_score', { ascending: false })
+    .order('rating_count', { ascending: false })
+    .order('title', { ascending: true })
+    .limit(limit)
+  if (category) query = query.eq('category', category)
+  const { data, error } = await query
+  return { data: (data || []).map(mapWatchStatsRow), error }
+}
+
+export async function searchWatchedTitles(term = '', limit = 25) {
+  if (!supabase) return { data: null, error: 'sin supabase' }
+  let query = supabase
+    .from(WATCH_STATS_VIEW)
+    .select('*')
+    .order('consumed_at', { ascending: false })
+    .limit(limit)
+  const cleanTerm = String(term || '').trim()
+  if (cleanTerm) {
+    query = query.ilike('title', `%${escapeLikePattern(cleanTerm)}%`)
+  }
+  const { data, error } = await query
+  return { data: (data || []).map(mapWatchStatsRow), error }
+}
+
+export async function upsertRating({
+  mediaId,
+  raterKey,
+  raterName,
+  discordUserId,
+  source,
+  score,
+  comment,
+}) {
+  if (!supabase) return { data: null, error: new Error('Supabase no está configurado') }
+  const row = {
+    media_id: mediaId,
+    rater_key: raterKey,
+    rater_name: raterName,
+    source,
+    score,
+    updated_at: new Date().toISOString(),
+  }
+  if (discordUserId !== undefined) row.discord_user_id = discordUserId || null
+  if (comment !== undefined) row.comment = comment
+
+  const { data, error } = await supabase
+    .from(RATINGS_TABLE)
+    .upsert(row, { onConflict: 'media_id,rater_key' })
+    .select('*')
+    .maybeSingle()
+  return { data: mapRatingRow(data), error }
+}
+
+export async function getRatingsForMedia(mediaId) {
+  if (!supabase) return { data: null, error: 'sin supabase' }
+  const { data, error } = await supabase
+    .from(RATINGS_TABLE)
+    .select('*')
+    .eq('media_id', mediaId)
+    .order('updated_at', { ascending: false })
+  return { data: (data || []).map(mapRatingRow), error }
 }
 
 export async function getById(id) {

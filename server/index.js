@@ -5,6 +5,8 @@ import config from './config.js'
 import { completeDiscordInteraction } from './discord.js'
 import { verifyDiscordRequest } from './discordInteractions.js'
 import { getTitles } from './discordSuggestions.js'
+import { buildAutocompleteResponse, getFocusedOption } from './discordRatings.js'
+import { normalizeRaterKey, validateRating } from './ratings.js'
 import {
   DEFAULT_NOTIFICATION_SETTINGS,
   buildWebhookPayload,
@@ -21,7 +23,12 @@ import {
   getAllTitles,
   setStatus,
   setConsumed,
-  getConsumedHistory,
+  getWatchHistoryWithStats,
+  getWatchStatsById,
+  getRatingsForMedia,
+  getRankings,
+  searchWatchedTitles,
+  upsertRating,
   getById,
   resetAll,
   backfillCategories,
@@ -45,7 +52,7 @@ app.use((req, res, next) => {
   next()
 })
 
-app.post('/api/discord/interactions', express.raw({ type: 'application/json', limit: '1mb' }), (req, res) => {
+app.post('/api/discord/interactions', express.raw({ type: 'application/json', limit: '1mb' }), async (req, res) => {
   const validSignature = verifyDiscordRequest({
     body: req.body,
     signature: req.get('x-signature-ed25519'),
@@ -63,17 +70,31 @@ app.post('/api/discord/interactions', express.raw({ type: 'application/json', li
 
   if (interaction.type === 1) return res.json({ type: 1 })
   if (interaction.application_id !== config.discordClientId) return res.sendStatus(401)
+
+  const commandName = interaction.data?.name
   const isSlashCommand = interaction.type === 2
-    && ['sugerir', 'titulos'].includes(interaction.data?.name)
+    && ['sugerir', 'titulos', 'calificar', 'ranking'].includes(commandName)
+  const isRatingAutocomplete = interaction.type === 4 && commandName === 'calificar'
   const isTitlePageButton = interaction.type === 3
     && /^titles:(all|anime|movie|series):\d+$/.test(interaction.data?.custom_id || '')
-  if ((!isSlashCommand && !isTitlePageButton) || typeof interaction.token !== 'string') {
+  if ((!isSlashCommand && !isTitlePageButton && !isRatingAutocomplete) || typeof interaction.token !== 'string') {
     return res.status(400).json({ error: 'Interacción no compatible.' })
+  }
+
+  if (isRatingAutocomplete) {
+    try {
+      const { data, error } = await searchWatchedTitles(getFocusedOption(interaction), 25)
+      if (error) throw new Error(error.message || String(error))
+      return res.json(buildAutocompleteResponse(data || []))
+    } catch (error) {
+      console.error('[discord] No se pudo autocompletar el título:', error.message)
+      return res.json({ type: 8, data: { choices: [] } })
+    }
   }
 
   if (isTitlePageButton) {
     res.json({ type: 6 })
-  } else if (interaction.data.name === 'titulos') {
+  } else if (['titulos', 'calificar'].includes(commandName)) {
     res.json({ type: 5, data: { flags: 64 } })
   } else {
     res.json({ type: 5 })
@@ -326,9 +347,115 @@ app.patch('/api/capsules/:id/consume', async (req, res) => {
 app.get('/api/history', async (req, res) => {
   try {
     const limit = Math.min(Number(req.query.limit) || 100, 500)
-    const { data, error } = await getConsumedHistory(limit)
+    const { data, error } = await getWatchHistoryWithStats(limit)
     if (error) return res.status(500).json({ error: error.message })
     res.json({ history: data })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+app.get('/api/rankings', async (req, res) => {
+  try {
+    const raw = String(req.query.category || '').toLowerCase()
+    const category = CATEGORIES.includes(raw) ? raw : null
+    const limit = Math.min(Math.max(Number(req.query.limit) || 10, 1), 50)
+    const { data, error } = await getRankings(category, limit)
+    if (error) return res.status(500).json({ error: error.message })
+    res.json({ rankings: data, category: category || 'mix' })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+app.get('/api/ratings/:mediaId', async (req, res) => {
+  try {
+    const { data: ratings, error } = await getRatingsForMedia(req.params.mediaId)
+    if (error) return res.status(500).json({ error: error.message })
+    const { data: stats, error: statsError } = await getWatchStatsById(req.params.mediaId)
+    if (statsError) return res.status(500).json({ error: statsError.message })
+
+    const raterKey = normalizeRaterKey(req.query.raterName)
+    const mine = raterKey
+      ? (ratings || []).find((rating) => rating.raterKey === raterKey) || null
+      : null
+    res.json({
+      ratings: (ratings || []).map((rating) => ({
+        id: rating.id,
+        raterName: rating.raterName,
+        source: rating.source,
+        score: rating.score,
+        comment: rating.comment,
+        createdAt: rating.createdAt,
+        updatedAt: rating.updatedAt,
+      })),
+      summary: {
+        mediaId: req.params.mediaId,
+        averageScore: stats?.averageScore || 0,
+        ratingCount: stats?.ratingCount || 0,
+      },
+      mine: mine
+        ? { score: mine.score, comment: mine.comment, updatedAt: mine.updatedAt }
+        : null,
+    })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+app.post('/api/ratings', async (req, res) => {
+  const { mediaId } = req.body || {}
+  if (typeof mediaId !== 'string' || !mediaId.trim()) {
+    return res.status(400).json({ error: 'mediaId es obligatorio.' })
+  }
+
+  const validation = validateRating({
+    score: req.body?.score,
+    comment: req.body?.comment,
+    raterName: req.body?.raterName,
+    source: 'web',
+  })
+  if (validation.error) return res.status(400).json({ error: validation.error })
+
+  try {
+    const { data: media, error: mediaError } = await getById(mediaId)
+    if (mediaError) return res.status(500).json({ error: mediaError.message })
+    if (!media) return res.status(404).json({ error: 'La obra no existe.' })
+    if (media.status !== 'WATCHED') {
+      return res.status(409).json({ error: 'Solo se pueden calificar obras marcadas como vistas.' })
+    }
+
+    const { data: existing, error: existingError } = await getRatingsForMedia(mediaId)
+    if (existingError) return res.status(500).json({ error: existingError.message })
+    const previous = (existing || []).find((rating) => rating.raterKey === validation.value.raterKey)
+
+    const { data: saved, error: saveError } = await upsertRating({
+      mediaId,
+      raterKey: validation.value.raterKey,
+      raterName: validation.value.raterName,
+      source: 'web',
+      score: validation.value.score,
+      comment: validation.value.comment,
+    })
+    if (saveError) return res.status(500).json({ error: saveError.message })
+    if (!saved) return res.status(500).json({ error: 'No se pudo confirmar la calificación guardada.' })
+
+    const { data: stats, error: statsError } = await getWatchStatsById(mediaId)
+    if (statsError) return res.status(500).json({ error: statsError.message })
+
+    res.json({
+      rating: {
+        score: saved.score,
+        comment: saved.comment,
+        updatedAt: saved.updatedAt,
+      },
+      summary: {
+        mediaId,
+        averageScore: stats?.averageScore || 0,
+        ratingCount: stats?.ratingCount || 0,
+      },
+      updated: Boolean(previous),
+    })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }

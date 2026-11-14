@@ -162,6 +162,7 @@ export function useClawGame() {
     handleCorrectTitle,
     openHistory,
     closeHistory,
+    refreshHistory,
     syncDiscord,
     syncing: discordSync.syncing,
     lastSyncAdded: discordSync.lastAdded,

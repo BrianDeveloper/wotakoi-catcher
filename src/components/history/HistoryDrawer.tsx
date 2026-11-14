@@ -1,31 +1,45 @@
+import { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useClawMachine } from '../../context/ClawMachineContext'
-import { categoryEmoji } from '../../lib/format'
-import { SHADOWS, SURFACES } from '../../constants/theme'
-import { CoverImage } from '../ui/CoverImage'
+import { useHistoryRatings } from '../../hooks/useHistoryRatings'
+import { SHADOWS } from '../../constants/theme'
+import type { AnimeEntry } from '../../types'
+import { RatingPodium } from './RatingPodium'
+import { HistoryCard } from './HistoryCard'
+import { RatingForm } from './RatingForm'
 
 export function HistoryDrawer() {
-  const { history, historyOpen, closeHistory } = useClawMachine()
+  const { history, historyOpen, closeHistory, refreshHistory } = useClawMachine()
+  const {
+    rankings,
+    loading: rankingsLoading,
+    error: rankingsError,
+    refresh: refreshRankings,
+  } = useHistoryRatings(historyOpen)
+  const [ratingTarget, setRatingTarget] = useState<AnimeEntry | null>(null)
+
+  const handleClose = () => {
+    setRatingTarget(null)
+    closeHistory()
+  }
+
+  const handleSaved = async () => {
+    await Promise.all([refreshHistory(), refreshRankings()])
+  }
 
   return (
     <AnimatePresence>
       {historyOpen && (
         <>
-          {/* Backdrop */}
           <motion.div
             className="modal-backdrop"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            onClick={closeHistory}
-            style={{
-              position: 'fixed',
-              inset: 0,
-              zIndex: 200,
-            }}
+            onClick={handleClose}
+            style={{ position: 'fixed', inset: 0, zIndex: 200 }}
           />
-          {/* Panel lateral */}
-          <motion.div
+          <motion.aside
             initial={{ x: '100%' }}
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
@@ -35,113 +49,130 @@ export function HistoryDrawer() {
               top: 0,
               right: 0,
               bottom: 0,
-              width: 'min(340px, 85vw)',
+              width: 'min(372px, 94vw)',
               zIndex: 210,
-              background: 'var(--c-machine-dark)',
+              background: 'linear-gradient(180deg, var(--c-machine-dark) 0%, #160a26 100%)',
               borderLeft: '3px solid var(--c-machine-light)',
               boxShadow: SHADOWS.drawer,
               display: 'flex',
               flexDirection: 'column',
             }}
           >
-            {/* Header */}
-            <div style={{
+            <header style={{
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              padding: '16px 18px',
+              padding: '14px 16px',
               borderBottom: '2px solid var(--c-machine-light)',
+              background: 'rgba(0,0,0,0.18)',
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.1)',
             }}>
-              <span style={{
-                fontSize: 15,
-                fontWeight: 900,
-                color: 'var(--c-text-main)',
-                textTransform: 'uppercase',
-                letterSpacing: 1,
-              }}>
-                🕘 Historial
-              </span>
+              <div>
+                <div style={{
+                  fontSize: 15,
+                  fontWeight: 900,
+                  color: 'var(--c-text-main)',
+                  textTransform: 'uppercase',
+                  letterSpacing: 1,
+                }}>
+                  🕘 Historial
+                </div>
+                <div style={{ marginTop: 2, fontSize: 9.5, fontWeight: 800, color: 'var(--c-text-light)', letterSpacing: 0.6 }}>
+                  Sala de cine · {history.length} {history.length === 1 ? 'obra vista' : 'obras vistas'}
+                </div>
+              </div>
               <button
-                onClick={closeHistory}
+                onClick={handleClose}
                 aria-label="Cerrar historial"
                 style={{
-                  background: 'none',
-                  border: 'none',
+                  background: 'rgba(0,0,0,0.2)',
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  borderRadius: 8,
                   color: 'var(--c-text-light)',
-                  fontSize: 18,
+                  width: 30,
+                  height: 30,
+                  fontSize: 16,
                   cursor: 'pointer',
-                  fontWeight: 800,
+                  fontWeight: 900,
+                  lineHeight: 1,
                 }}
               >
                 ✕
               </button>
-            </div>
+            </header>
 
-            {/* Lista */}
-            <div style={{
+            <RatingPodium
+              rankings={rankings}
+              loading={rankingsLoading}
+              error={rankingsError}
+            />
+
+            <div className="library-scroll" style={{
               flex: 1,
               overflowY: 'auto',
-              padding: '10px 14px',
+              padding: '12px 14px 18px',
               display: 'flex',
               flexDirection: 'column',
-              gap: 10,
+              gap: 9,
             }}>
-              {history.length === 0 ? (
-                <p style={{
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0 2px 2px',
+              }}>
+                <span style={{
+                  fontSize: 10,
+                  fontWeight: 900,
+                  letterSpacing: 1,
+                  textTransform: 'uppercase',
                   color: 'var(--c-text-light)',
-                  fontSize: 13,
-                  textAlign: 'center',
-                  marginTop: 30,
-                  opacity: 0.8,
                 }}>
-                  Aún no hay títulos en el historial.
-                </p>
+                  Vistos recientemente
+                </span>
+                <span style={{ fontSize: 9.5, fontWeight: 800, color: 'var(--c-text-light)', opacity: 0.7 }}>
+                  Toca ⭐ para calificar
+                </span>
+              </div>
+
+              {history.length === 0 ? (
+                <div style={{
+                  marginTop: 12,
+                  padding: '18px 14px',
+                  borderRadius: 12,
+                  border: '1px dashed rgba(255,255,255,0.18)',
+                  background: 'rgba(0,0,0,0.16)',
+                  textAlign: 'center',
+                }}>
+                  <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: 'var(--c-text-light)', opacity: 0.85 }}>
+                    Aún no hay títulos en el historial.
+                  </p>
+                  <p style={{ margin: '5px 0 0', fontSize: 10.5, color: 'var(--c-text-light)', opacity: 0.65 }}>
+                    Cuando saques una obra de la máquina aparecerá aquí.
+                  </p>
+                </div>
               ) : (
                 history.map((item) => (
-                  <div key={item.id} style={{
-                    display: 'flex',
-                    gap: 10,
-                    alignItems: 'center',
-                    background: SURFACES.cardBg,
-                    border: `1px solid ${SURFACES.cardBorder}`,
-                    borderRadius: 10,
-                    padding: 8,
-                  }}>
-                    <CoverImage
-                      src={item.image}
-                      style={{
-                        width: 42,
-                        height: 58,
-                        borderRadius: 6,
-                        objectFit: 'cover',
-                        flexShrink: 0,
-                      }}
-                    />
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{
-                        color: 'var(--c-text-main)',
-                        fontWeight: 800,
-                        fontSize: 13,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}>
-                        {item.title}
-                      </div>
-                      <div style={{
-                        color: 'var(--c-text-light)',
-                        fontSize: 11,
-                        marginTop: 2,
-                      }}>
-                        {item.consumedAt ? new Date(item.consumedAt).toLocaleString() : ''}
-                      </div>
-                    </div>
-                    <span style={{ fontSize: 16 }}>{categoryEmoji(item.category)}</span>
-                  </div>
+                  <HistoryCard
+                    key={item.id}
+                    item={item}
+                    onRate={() => setRatingTarget(item)}
+                  />
                 ))
               )}
             </div>
-          </motion.div>
+          </motion.aside>
+
+          <AnimatePresence>
+            {ratingTarget && (
+              <RatingForm
+                key={ratingTarget.id}
+                media={ratingTarget}
+                onClose={() => setRatingTarget(null)}
+                onSaved={() => void handleSaved()}
+              />
+            )}
+          </AnimatePresence>
         </>
       )}
     </AnimatePresence>

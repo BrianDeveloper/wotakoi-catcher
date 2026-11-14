@@ -13,6 +13,49 @@ export interface AnimeEntry {
   suggested_by?: string
   createdAt?: string
   consumedAt?: string
+  averageScore?: number
+  ratingCount?: number
+}
+
+export type RatingSource = 'discord' | 'web'
+
+export interface MediaRating {
+  id: string
+  raterName: string
+  source: RatingSource
+  score: number
+  comment: string | null
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface MyRating {
+  score: number
+  comment: string | null
+  updatedAt?: string
+}
+
+export interface RatingSummary {
+  mediaId: string
+  averageScore: number
+  ratingCount: number
+}
+
+export interface RatingDetail {
+  ratings: MediaRating[]
+  summary: RatingSummary
+  mine: MyRating | null
+}
+
+export interface RankedTitle extends AnimeEntry {
+  averageScore: number
+  ratingCount: number
+}
+
+export interface SubmitRatingResult {
+  rating: MyRating
+  summary: RatingSummary
+  updated: boolean
 }
 
 export type MachineKey = 'anime' | 'movie' | 'series' | 'mix'
