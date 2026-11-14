@@ -24,6 +24,7 @@ import {
 import { getSuggestionMeta } from './jikan.js'
 import { extractSuggestionEntries } from './suggestionParser.js'
 import { createTitleListResponse, TITLE_LIST_PAGE_SIZE } from './discordTitleList.js'
+import { patchOriginalInteractionResponse } from './discordInteractionResponse.js'
 
 const CATEGORY_META = {
   anime: { emoji: '🍥', label: 'Anime' },
@@ -309,24 +310,27 @@ async function createRankingMessage(interaction) {
 export async function completeDiscordInteraction(interaction) {
   const commandName = interaction.data?.name
   let response
-  if (interaction.type === 3 || commandName === 'titulos') {
-    response = await createTitleListMessage(interaction)
-  } else if (commandName === 'calificar') {
-    response = await createRatingResponse(interaction)
-  } else if (commandName === 'ranking') {
-    response = await createRankingMessage(interaction)
-  } else {
-    response = await createSuggestionResponse(interaction)
+  try {
+    if (interaction.type === 3 || commandName === 'titulos') {
+      response = await createTitleListMessage(interaction)
+    } else if (commandName === 'calificar') {
+      response = await createRatingResponse(interaction)
+    } else if (commandName === 'ranking') {
+      response = await createRankingMessage(interaction)
+    } else {
+      response = await createSuggestionResponse(interaction)
+    }
+  } catch (error) {
+    console.error('[discord] Error al procesar la interacción:', error)
+    response = {
+      content: '❌ No se pudo procesar el comando. Inténtalo de nuevo más tarde.',
+      allowed_mentions: { parse: [] },
+    }
   }
 
-  const url = `https://discord.com/api/v10/webhooks/${config.discordClientId}/${interaction.token}/messages/@original`
-  const result = await fetch(url, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(response),
-    signal: AbortSignal.timeout(10000),
+  return patchOriginalInteractionResponse({
+    applicationId: interaction.application_id || config.discordClientId,
+    token: interaction.token,
+    response,
   })
-  if (!result.ok) {
-    throw new Error(`Discord no aceptó la respuesta: ${result.status} ${result.statusText}`)
-  }
 }
