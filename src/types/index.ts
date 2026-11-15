@@ -60,6 +60,8 @@ export interface SubmitRatingResult {
 
 export type MachineKey = 'anime' | 'movie' | 'series' | 'mix'
 
+export type TitleStatus = 'PENDING' | 'IN_MACHINE' | 'WATCHING' | 'WATCHED'
+
 export type MarqueeVariant = 'manga' | 'broadway' | 'tv' | 'glitch'
 
 export type DomeEffect = 'scanlines' | 'glitchbars' | 'none'

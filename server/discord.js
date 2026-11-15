@@ -3,7 +3,7 @@ import { REST, Routes, SlashCommandBuilder } from 'discord.js'
 import {
   getAllTitlesPage,
   getById,
-  getRankings,
+  getRankingsPage,
   getRatingsForMedia,
   getWatchStatsById,
   insertSuggestion,
@@ -12,14 +12,18 @@ import {
   upsertRating,
 } from './supabase.js'
 import {
-  RANKING_LIMIT,
+  MEDALS,
   validateRating,
 } from './ratings.js'
 import {
+  ayudaCommand,
+  buildHelpResponse,
   buildRankingResponse,
   buildRatingResponse,
   calificarCommand,
+  getRankingRequest,
   rankingCommand,
+  RANKING_PAGE_SIZE,
 } from './discordRatings.js'
 import { getSuggestionMeta } from './jikan.js'
 import { extractSuggestionEntries } from './suggestionParser.js'
@@ -98,10 +102,11 @@ export async function registerDiscordCommands() {
         titlesCommand.toJSON(),
         calificarCommand.toJSON(),
         rankingCommand.toJSON(),
+        ayudaCommand.toJSON(),
       ],
     },
   )
-  console.log('[discord] Comandos /sugerir, /titulos, /calificar y /ranking registrados en el servidor.')
+  console.log('[discord] Comandos /sugerir, /titulos, /calificar, /ranking y /ayuda registrados en el servidor.')
 }
 
 function getOption(interaction, name) {
@@ -293,24 +298,50 @@ async function createRatingResponse(interaction) {
 }
 
 async function createRankingMessage(interaction) {
-  const requested = getOption(interaction, 'categoria') || 'all'
-  if (!['all', 'anime', 'movie', 'series'].includes(requested)) {
-    return { content: '⚠️ La categoría seleccionada no es válida.' }
-  }
-  const category = requested === 'all' ? null : requested
-  const { data, error } = await getRankings(category, RANKING_LIMIT)
-  if (error) {
-    console.error('[discord] Error al consultar el ranking:', error.message || error)
+  const request = getRankingRequest(interaction)
+  if (!request) return { content: '⚠️ No se pudo interpretar la página del ranking.' }
+
+  const { category } = request
+  const podiumResult = await getRankingsPage(category, 0, MEDALS.length)
+  if (podiumResult.error) {
+    console.error('[discord] Error al consultar el ranking:', podiumResult.error.message || podiumResult.error)
     return { content: '❌ No se pudo consultar el ranking. Inténtalo más tarde.' }
   }
-  return buildRankingResponse({ titles: data || [], category })
+
+  const total = podiumResult.count || 0
+  const restCount = Math.max(0, total - MEDALS.length)
+  const pageCount = Math.max(1, Math.ceil(restCount / RANKING_PAGE_SIZE))
+  const page = Math.min(Math.max(1, request.page), pageCount)
+
+  let rest = []
+  if (restCount > 0) {
+    const offset = MEDALS.length + (page - 1) * RANKING_PAGE_SIZE
+    const restResult = await getRankingsPage(category, offset, RANKING_PAGE_SIZE)
+    if (restResult.error) {
+      console.error('[discord] Error al consultar el ranking:', restResult.error.message || restResult.error)
+      return { content: '❌ No se pudo consultar el ranking. Inténtalo más tarde.' }
+    }
+    rest = restResult.data || []
+  }
+
+  return buildRankingResponse({
+    podium: podiumResult.data || [],
+    rest,
+    total,
+    page,
+    pageCount,
+    category,
+  })
 }
 
 export async function buildDiscordInteractionResponse(interaction) {
   const commandName = interaction.data?.name
 
   if (interaction.type === 3) {
-    const data = await createTitleListMessage(interaction)
+    const customId = interaction.data?.custom_id || ''
+    const data = customId.startsWith('ranking:')
+      ? await createRankingMessage(interaction)
+      : await createTitleListMessage(interaction)
     return { type: 7, data }
   }
 
@@ -327,6 +358,10 @@ export async function buildDiscordInteractionResponse(interaction) {
   if (commandName === 'ranking') {
     const data = await createRankingMessage(interaction)
     return { type: 4, data }
+  }
+
+  if (commandName === 'ayuda') {
+    return { type: 4, data: buildHelpResponse() }
   }
 
   const data = await createSuggestionResponse(interaction)

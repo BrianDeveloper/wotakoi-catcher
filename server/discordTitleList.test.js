@@ -6,6 +6,7 @@ test('creates a paginated title list with category and state', () => {
   const response = createTitleListResponse({
     titles: [
       { title: 'My *Anime*', category: 'anime', status: 'IN_MACHINE' },
+      { title: 'Watching', category: 'series', status: 'WATCHING' },
       { title: 'Film', category: 'movie', status: 'WATCHED' },
     ],
     count: 21,
@@ -15,6 +16,7 @@ test('creates a paginated title list with category and state', () => {
 
   assert.ok(response.embeds[0].description.includes('My \\*Anime\\*'))
   assert.match(response.embeds[0].description, /Anime · En máquina/)
+  assert.match(response.embeds[0].description, /Serie · Viendo/)
   assert.match(response.embeds[0].description, /Película · Visto/)
   assert.match(response.embeds[0].footer.text, /21 títulos · Página 1\/2/)
   assert.equal(response.components[0].components[0].disabled, true)

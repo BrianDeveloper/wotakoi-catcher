@@ -68,6 +68,12 @@ export const rankingCommand = new SlashCommandBuilder()
         { name: 'Película', value: 'movie' },
         { name: 'Serie', value: 'series' }))
 
+export const ayudaCommand = new SlashCommandBuilder()
+  .setName('ayuda')
+  .setDescription('Muestra los comandos disponibles de la máquina')
+
+export const RANKING_PAGE_SIZE = RANKING_LIMIT
+
 export function getCommandOption(interaction, name) {
   return interaction.data?.options?.find((option) => option.name === name)?.value
 }
@@ -125,9 +131,55 @@ export function buildRatingResponse({
   }
 }
 
-export function buildRankingResponse({ titles = [], category = null }) {
+export function buildHelpResponse() {
+  const description = [
+    '**/sugerir** — Propón una obra y elige su categoría (anime, película o serie).',
+    '**/titulos** — Consulta los títulos registrados, con filtros y páginas.',
+    '**/calificar** — Puntúa de 1 a 10 una obra ya vista, con comentario opcional.',
+    '**/ranking** — Mira el podio de las obras mejor calificadas, con páginas.',
+    '**/ayuda** — Muestra esta ayuda.',
+  ].join('\n')
+  return {
+    embeds: [{
+      color: 0x22d3ee,
+      title: '🎮 Comandos de Wotakoi-Catcher',
+      description,
+      fields: [{
+        name: '⏳ Si el bot no responde…',
+        value: 'El servidor gratuito de Render se “duerme” tras unos minutos sin uso. El primer comando puede tardar hasta ~1 minuto en despertar; espera un momento y vuelve a intentarlo.',
+      }],
+      footer: { text: 'Wotakoi Machine · Ayuda' },
+      timestamp: new Date().toISOString(),
+    }],
+    allowed_mentions: { parse: [] },
+  }
+}
+
+export function getRankingRequest(interaction) {
+  if (interaction.type === 3) {
+    const match = /^ranking:(all|anime|movie|series):(\d+)$/.exec(interaction.data?.custom_id || '')
+    if (!match) return null
+    const page = Number(match[2])
+    if (!Number.isSafeInteger(page) || page < 1 || page > 10000) return null
+    return { category: match[1] === 'all' ? null : match[1], page }
+  }
+  const category = getCommandOption(interaction, 'categoria') || 'all'
+  if (!['all', 'anime', 'movie', 'series'].includes(category)) return null
+  return { category: category === 'all' ? null : category, page: 1 }
+}
+
+export function buildRankingResponse({
+  podium = [],
+  rest = [],
+  total = 0,
+  page = 1,
+  pageCount = 1,
+  category = null,
+}) {
   const scope = category ? categoryLabel(category) : 'Todas las categorías'
-  if (!titles.length) {
+  const categoryId = category || 'all'
+
+  if (!total) {
     return {
       embeds: [{
         color: 0x64748b,
@@ -139,23 +191,40 @@ export function buildRankingResponse({ titles = [], category = null }) {
     }
   }
 
-  const top = titles.slice(0, RANKING_LIMIT)
-  const podium = top.slice(0, MEDALS.length)
-  const rest = top.slice(MEDALS.length)
   const podiumLines = podium.map((item, index) =>
     `${MEDALS[index]} **${escapeUnescapedMarkdown(item.title)}** — ⭐ ${formatAverage(item.averageScore)} · ${formatVotes(item.ratingCount)}`)
+  const restStart = MEDALS.length + (page - 1) * RANKING_PAGE_SIZE
   const restLines = rest.map((item, index) =>
-    `${index + MEDALS.length + 1}. **${escapeUnescapedMarkdown(item.title)}** — ⭐ ${formatAverage(item.averageScore)} · ${formatVotes(item.ratingCount)}`)
+    `${restStart + index + 1}. **${escapeUnescapedMarkdown(item.title)}** — ⭐ ${formatAverage(item.averageScore)} · ${formatVotes(item.ratingCount)}`)
   const description = [...podiumLines, ...restLines].join('\n')
-  const topLabel = top.length === 1 ? 'obra en el ranking' : 'obras en el ranking'
+  const totalLabel = total === 1 ? 'obra calificada' : 'obras calificadas'
 
   return {
     embeds: [{
       color: 0xfbbf24,
       title: `🏆 Ranking Wotakoi · ${scope}`,
       description,
-      footer: { text: `${top.length} ${topLabel} · ${scope}` },
+      footer: { text: `${total} ${totalLabel} · Página ${page}/${pageCount} · ${scope}` },
       timestamp: new Date().toISOString(),
+    }],
+    components: [{
+      type: 1,
+      components: [
+        {
+          type: 2,
+          style: 2,
+          label: '← Anterior',
+          custom_id: `ranking:${categoryId}:${Math.max(1, page - 1)}`,
+          disabled: page <= 1,
+        },
+        {
+          type: 2,
+          style: 2,
+          label: 'Siguiente →',
+          custom_id: `ranking:${categoryId}:${Math.min(pageCount, page + 1)}`,
+          disabled: page >= pageCount,
+        },
+      ],
     }],
     allowed_mentions: { parse: [] },
   }

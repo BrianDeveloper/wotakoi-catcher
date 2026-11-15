@@ -5,6 +5,7 @@ import type {
   RankedTitle,
   RatingDetail,
   SubmitRatingResult,
+  TitleStatus,
 } from '../types'
 
 const MACHINE_URL = 'http://localhost:4000/api/machine/capsules'
@@ -17,11 +18,16 @@ const RATINGS_URL = 'http://localhost:4000/api/ratings'
 const SYNC_URL = 'http://localhost:4000/api/sync-discord'
 const ADMIN_NOTIFICATIONS_URL = 'http://localhost:4000/api/admin/notifications'
 const ADMIN_TITLES_URL = 'http://localhost:4000/api/admin/titles'
+const ADMIN_MACHINES_URL = 'http://localhost:4000/api/admin/machines'
 
 export interface ReshuffleResult {
   selected: number
   pending: number
   preservedWatched: true
+}
+
+export interface ClearMachineResult {
+  cleared: number
 }
 
 export interface TitleCorrectionResult {
@@ -160,8 +166,35 @@ export async function correctTitle(
   )
 }
 
-export async function reshuffleMachine(adminKey: string): Promise<ReshuffleResult> {
-  return adminRequest<ReshuffleResult>(`${ADMIN_TITLES_URL}/reshuffle`, adminKey, { method: 'POST' })
+export async function reshuffleMachine(
+  adminKey: string,
+  category: MachineKey = 'mix',
+): Promise<ReshuffleResult> {
+  return adminRequest<ReshuffleResult>(`${ADMIN_TITLES_URL}/reshuffle`, adminKey, {
+    method: 'POST',
+    body: JSON.stringify({ category }),
+  })
+}
+
+export async function setTitleStatus(
+  adminKey: string,
+  id: string,
+  status: TitleStatus,
+): Promise<void> {
+  await adminRequest(`${ADMIN_TITLES_URL}/${encodeURIComponent(id)}/status`, adminKey, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  })
+}
+
+export async function clearMachine(
+  adminKey: string,
+  category: MachineKey = 'mix',
+): Promise<ClearMachineResult> {
+  return adminRequest<ClearMachineResult>(`${ADMIN_MACHINES_URL}/clear`, adminKey, {
+    method: 'POST',
+    body: JSON.stringify({ category }),
+  })
 }
 
 export async function syncSuggestions(adminKey: string): Promise<{

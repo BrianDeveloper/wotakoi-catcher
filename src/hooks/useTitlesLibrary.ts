@@ -37,6 +37,10 @@ export function useTitlesLibrary() {
     await reload(category)
   }, [reload])
 
+  const reloadCurrent = useCallback(async () => {
+    await reload(filter)
+  }, [filter, reload])
+
   return {
     titles,
     open,
@@ -46,5 +50,6 @@ export function useTitlesLibrary() {
     openLibrary,
     closeLibrary,
     selectCategory,
+    reload: reloadCurrent,
   }
 }

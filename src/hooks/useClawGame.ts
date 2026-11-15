@@ -1,19 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { MACHINES } from '../constants/machineThemes'
 import { REFRESH_INTERVAL_MIN } from '../constants/game'
-import { correctTitle as correctTitleRequest, deleteTitle as deleteTitleRequest, resetMachine, reshuffleMachine } from '../lib/api'
-import type { ReshuffleResult, TitleCorrectionResult } from '../lib/api'
+import { correctTitle as correctTitleRequest, deleteTitle as deleteTitleRequest, resetMachine, reshuffleMachine, setTitleStatus as setTitleStatusRequest, clearMachine as clearMachineRequest } from '../lib/api'
+import type { ClearMachineResult, ReshuffleResult, TitleCorrectionResult } from '../lib/api'
 import { useMachineData } from './useMachineData'
 import { useClawAnimation } from './useClawAnimation'
 import { useClawPayout } from './useClawPayout'
 import { useDiscordSync } from './useDiscordSync'
 import { useTitlesLibrary } from './useTitlesLibrary'
-import type { MachineKey } from '../types'
+import type { MachineKey, TitleStatus } from '../types'
 
 export function useClawGame() {
   const [categoryFilter, setCategoryFilter] = useState<MachineKey>('anime')
   const [resetting, setResetting] = useState(false)
   const [reshuffling, setReshuffling] = useState(false)
+  const [clearing, setClearing] = useState<MachineKey | null>(null)
   const [slideDir, setSlideDir] = useState<'left' | 'right'>('right')
   const [historyOpen, setHistoryOpen] = useState(false)
 
@@ -109,11 +110,12 @@ export function useClawGame() {
     return result
   }, [payout.resetSession, reload, categoryFilter, refreshHistory])
 
-  const handleAdminReshuffle = useCallback(async (adminKey: string): Promise<ReshuffleResult | null> => {
-    if (!window.confirm('¿Volver a sortear las máquinas? Se redistribuirán al azar los títulos pendientes y en máquina; los ya consumidos y su historial se conservarán.')) return null
+  const handleAdminReshuffle = useCallback(async (adminKey: string, category: MachineKey = 'mix'): Promise<ReshuffleResult | null> => {
+    const scope = category === 'mix' ? 'todas las máquinas' : `la máquina ${category}`
+    if (!window.confirm(`¿Volver a sortear ${scope}? Se redistribuirán al azar los títulos pendientes y en máquina; los ya vistos y su historial se conservarán.`)) return null
     setReshuffling(true)
     try {
-      const result = await reshuffleMachine(adminKey)
+      const result = await reshuffleMachine(adminKey, category)
       payout.resetSession()
       await reload(categoryFilter, true)
       return result
@@ -124,6 +126,28 @@ export function useClawGame() {
       setReshuffling(false)
     }
   }, [payout.resetSession, reload, categoryFilter])
+
+  const handleClearMachine = useCallback(async (adminKey: string, category: MachineKey): Promise<ClearMachineResult | null> => {
+    const scope = category === 'mix' ? 'todas las máquinas' : `la máquina ${category}`
+    if (!window.confirm(`¿Vaciar ${scope}? Los títulos que están en la máquina volverán a la cola (PENDING).`)) return null
+    setClearing(category)
+    try {
+      const result = await clearMachineRequest(adminKey, category)
+      payout.resetSession()
+      await Promise.all([reload(categoryFilter, true), library.reload()])
+      return result
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Error al vaciar la máquina')
+      return null
+    } finally {
+      setClearing(null)
+    }
+  }, [payout.resetSession, reload, categoryFilter, library.reload])
+
+  const handleSetTitleStatus = useCallback(async (adminKey: string, id: string, status: TitleStatus) => {
+    await setTitleStatusRequest(adminKey, id, status)
+    await Promise.all([reload(categoryFilter, true), library.reload()])
+  }, [reload, categoryFilter, library.reload])
 
   const activeMachine = MACHINES.find((m) => m.key === categoryFilter) || MACHINES[0]
 
@@ -142,6 +166,7 @@ export function useClawGame() {
     isShaking: payout.isShaking,
     resetting,
     reshuffling,
+    clearing,
     slideDir,
     activeMachine,
     clawXControls: anim.clawXControls,
@@ -158,6 +183,8 @@ export function useClawGame() {
     handleCloseModal: payout.handleCloseModal,
     handleAdminReset,
     handleAdminReshuffle,
+    handleClearMachine,
+    handleSetTitleStatus,
     handleDeleteTitle,
     handleCorrectTitle,
     openHistory,

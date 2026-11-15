@@ -32,3 +32,15 @@ test('selects every eligible title when a category has fewer titles than the cap
   assert.deepEqual(result.machineIds, ['movie-1'])
   assert.deepEqual(result.pendingIds, [])
 })
+
+test('restricts the draw to the requested categories', () => {
+  const items = [
+    ...Array.from({ length: 35 }, (_, index) => ({ id: `anime-${index}`, category: 'anime' })),
+    ...Array.from({ length: 5 }, (_, index) => ({ id: `movie-${index}`, category: 'movie' })),
+  ]
+  const result = randomizeActiveAssignments(items, 30, () => 0.5, ['anime'])
+
+  assert.equal(result.machineIds.filter((id) => id.startsWith('anime-')).length, 30)
+  assert.equal(result.machineIds.filter((id) => id.startsWith('movie-')).length, 0)
+  assert.equal(result.pendingIds.filter((id) => id.startsWith('movie-')).length, 5)
+})

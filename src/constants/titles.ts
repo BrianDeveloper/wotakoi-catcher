@@ -1,4 +1,4 @@
-import type { MachineKey } from '../types'
+import type { MachineKey, TitleStatus } from '../types'
 
 export interface TitleStatusMeta {
   label: string
@@ -9,8 +9,11 @@ export interface TitleStatusMeta {
 export const STATUS_META: Record<string, TitleStatusMeta> = {
   PENDING: { label: 'En cola', emoji: '🗂', color: '#f59e0b' },
   IN_MACHINE: { label: 'En máquina', emoji: '🎰', color: '#22d3ee' },
+  WATCHING: { label: 'Viendo', emoji: '👀', color: '#a78bfa' },
   WATCHED: { label: 'Visto', emoji: '✅', color: '#4ade80' },
 }
+
+export const STATUS_ORDER: TitleStatus[] = ['PENDING', 'IN_MACHINE', 'WATCHING', 'WATCHED']
 
 export type TitleFilter = 'all' | MachineKey
 
@@ -25,9 +28,11 @@ export type StatusFilter = 'all' | keyof typeof STATUS_META
 
 export const STATUS_FILTERS: { key: StatusFilter; label: string; emoji: string }[] = [
   { key: 'all', label: 'Todos', emoji: '📌' },
-  { key: 'PENDING', label: STATUS_META.PENDING.label, emoji: STATUS_META.PENDING.emoji },
-  { key: 'IN_MACHINE', label: STATUS_META.IN_MACHINE.label, emoji: STATUS_META.IN_MACHINE.emoji },
-  { key: 'WATCHED', label: STATUS_META.WATCHED.label, emoji: STATUS_META.WATCHED.emoji },
+  ...STATUS_ORDER.map((status) => ({
+    key: status,
+    label: STATUS_META[status].label,
+    emoji: STATUS_META[status].emoji,
+  })),
 ]
 
 export function statusMeta(status?: string): TitleStatusMeta {

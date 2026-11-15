@@ -265,13 +265,43 @@ export async function setStatus(ids, status) {
   return { data, error }
 }
 
-export async function setConsumed(ids, consumedAt = new Date().toISOString()) {
+export const TITLE_STATUSES = ['PENDING', 'IN_MACHINE', 'WATCHING', 'WATCHED']
+
+/** Marca las obras como "viendo" (próxima a ver) al salir de la máquina */
+export async function markWatching(ids) {
   if (!supabase) return { data: null, error: 'sin supabase' }
   const { data, error } = await supabase
     .from(TABLE)
-    .update({ status: 'WATCHED', consumed_at: consumedAt })
+    .update({ status: 'WATCHING' })
     .in('id', ids)
   return { data, error }
+}
+
+/** Cambia el estado de una obra; fija consumed_at solo cuando pasa a WATCHED */
+export async function updateTitleStatus(id, status) {
+  if (!supabase) return { data: null, error: new Error('Supabase no está configurado') }
+  if (!TITLE_STATUSES.includes(status)) {
+    return { data: null, error: new Error(`Estado inválido: ${status}`) }
+  }
+  const { data, error } = await supabase
+    .from(TABLE)
+    .update({ status, consumed_at: status === 'WATCHED' ? new Date().toISOString() : null })
+    .eq('id', id)
+    .select('*')
+    .maybeSingle()
+  return { data: data ? mapRowToCapsule(data) : null, error }
+}
+
+/** Devuelve a PENDING los títulos que están en la máquina (categoría o todas) */
+export async function clearMachine(category = null) {
+  if (!supabase) return { data: null, error: new Error('Supabase no está configurado') }
+  let query = supabase
+    .from(TABLE)
+    .update({ status: 'PENDING' })
+    .eq('status', 'IN_MACHINE')
+  if (category) query = query.eq('category', category)
+  const { data, error } = await query.select('id')
+  return { data: { cleared: (data || []).length }, error }
 }
 
 export async function getConsumedHistory(limit = 100) {
@@ -319,6 +349,22 @@ export async function getRankings(category = null, limit = 10) {
   if (category) query = query.eq('category', category)
   const { data, error } = await query
   return { data: (data || []).map(mapWatchStatsRow), error }
+}
+
+export async function getRankingsPage(category = null, offset = 0, limit = 10) {
+  if (!supabase) return { data: null, error: 'sin supabase', count: 0 }
+  const start = Math.max(0, offset)
+  let query = supabase
+    .from(WATCH_STATS_VIEW)
+    .select('*', { count: 'exact' })
+    .gte('rating_count', RANKING_MIN_VOTES)
+    .order('average_score', { ascending: false })
+    .order('rating_count', { ascending: false })
+    .order('title', { ascending: true })
+    .range(start, start + Math.max(1, limit) - 1)
+  if (category) query = query.eq('category', category)
+  const { data, error, count } = await query
+  return { data: (data || []).map(mapWatchStatsRow), error, count: count || 0 }
 }
 
 export async function searchWatchedTitles(term = '', limit = 25) {
@@ -414,22 +460,25 @@ export async function updateTitleCorrection(id, category, meta = null) {
   return { data, error }
 }
 
-export async function reshuffleActiveTitles(capacity = 30) {
+export async function reshuffleActiveTitles(capacity = 30, category = null) {
   if (!supabase) return { data: null, error: new Error('Supabase no está configurado') }
 
+  const categories = category ? [category] : ['anime', 'movie', 'series']
   const activeItems = []
   for (let offset = 0; ; offset += 1000) {
-    const { data, error } = await supabase
+    let query = supabase
       .from(TABLE)
       .select('id, category')
       .in('status', ['PENDING', 'IN_MACHINE'])
       .range(offset, offset + 999)
+    if (category) query = query.eq('category', category)
+    const { data, error } = await query
     if (error) return { data: null, error }
     activeItems.push(...(data || []))
     if (!data || data.length < 1000) break
   }
 
-  const assignments = randomizeActiveAssignments(activeItems, capacity)
+  const assignments = randomizeActiveAssignments(activeItems, capacity, Math.random, categories)
   if (assignments.pendingIds.length) {
     const { error } = await supabase
       .from(TABLE)

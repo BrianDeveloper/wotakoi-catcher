@@ -1,6 +1,8 @@
 # Configuración de datos de la aplicación
 
-Ejecuta `001_app_settings.sql` y después `002_media_ratings.sql` en el SQL Editor del proyecto Supabase.
+Ejecuta `001_app_settings.sql`, `002_media_ratings.sql` y `003_watching_status.sql` en el SQL Editor del proyecto Supabase.
+
+`003_watching_status.sql` normaliza el `CHECK` de `media_items.status` para admitir el estado `WATCHING`: el flujo pasa a ser `PENDING` (en cola) → `IN_MACHINE` (en máquina) → `WATCHING` (viendo / próxima a ver) → `WATCHED` (vista). `WATCHING` se asigna al sacar la obra de la máquina y `WATCHED` se marca a mano al terminar de verla; solo las obras `WATCHED` se pueden calificar y aparecen en el historial y el ranking.
 
 `002_media_ratings.sql` crea las calificaciones por obra y la vista `media_watch_stats`, que concentra el promedio y la cantidad de votos de los títulos vistos. Las calificaciones se pueden leer, crear y editar desde el backend; el borrado se produce en cascada al eliminar un título.
 

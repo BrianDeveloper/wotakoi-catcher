@@ -3,8 +3,9 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { useClawMachine } from '../../context/ClawMachineContext'
 import { categoryEmoji } from '../../lib/format'
 import { SHADOWS, SURFACES, STATE_COLORS } from '../../constants/theme'
-import { LIBRARY_FILTERS, STATUS_FILTERS, statusMeta } from '../../constants/titles'
+import { LIBRARY_FILTERS, STATUS_FILTERS, STATUS_META, STATUS_ORDER, statusMeta } from '../../constants/titles'
 import type { StatusFilter } from '../../constants/titles'
+import type { TitleStatus } from '../../types'
 import { CoverImage } from '../ui/CoverImage'
 import { FilterChip } from '../ui/FilterChip'
 
@@ -31,12 +32,14 @@ export function TitlesDrawer() {
     selectLibraryCategory,
     handleDeleteTitle,
     handleCorrectTitle,
+    handleSetTitleStatus,
   } = useClawMachine()
 
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [correctingId, setCorrectingId] = useState<string | null>(null)
+  const [statusSavingId, setStatusSavingId] = useState<string | null>(null)
   const [categorySelections, setCategorySelections] = useState<Record<string, string>>({})
   const [titleQueries, setTitleQueries] = useState<Record<string, string>>({})
   const [yearQueries, setYearQueries] = useState<Record<string, string>>({})
@@ -100,6 +103,25 @@ export function TitlesDrawer() {
       setActionError(err instanceof Error ? err.message : 'No se pudo corregir el título.')
     } finally {
       setCorrectingId(null)
+    }
+  }
+
+  const changeStatus = async (id: string, status: string) => {
+    const adminKey = sessionStorage.getItem('wotakoi-admin-key')
+    if (!adminKey) {
+      setActionError('Conecta la administración antes de cambiar el estado.')
+      return
+    }
+    setStatusSavingId(id)
+    setActionError(null)
+    setActionNotice(null)
+    try {
+      await handleSetTitleStatus(adminKey, id, status as TitleStatus)
+      setActionNotice(`Estado actualizado a “${STATUS_META[status]?.label || status}”.`)
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'No se pudo cambiar el estado.')
+    } finally {
+      setStatusSavingId(null)
     }
   }
 
@@ -306,18 +328,34 @@ export function TitlesDrawer() {
                       </div>
                       <div style={{ display: 'flex', gap: 6, marginTop: 4, alignItems: 'center' }}>
                         <span style={{ fontSize: 13 }}>{categoryEmoji(item.category)}</span>
-                        <span style={{
-                          fontSize: 10,
-                          fontWeight: 800,
-                          background: `${meta.color}2e`,
-                          color: meta.color,
-                          border: `1px solid ${meta.color}66`,
-                          borderRadius: 999,
-                          padding: '1px 8px',
-                          whiteSpace: 'nowrap',
-                        }}>
-                          {meta.emoji} {meta.label}
-                        </span>
+                        <select
+                          aria-label={`Estado de ${item.title}`}
+                          value={item.status || 'PENDING'}
+                          onChange={(event) => void changeStatus(item.id, event.target.value)}
+                          disabled={statusSavingId !== null || correctingId !== null || deletingId !== null}
+                          style={{
+                            minWidth: 0,
+                            flex: 1,
+                            fontSize: 10,
+                            fontWeight: 800,
+                            background: `${meta.color}1f`,
+                            color: meta.color,
+                            border: `1px solid ${meta.color}66`,
+                            borderRadius: 999,
+                            padding: '2px 6px',
+                            cursor: statusSavingId !== null ? 'wait' : 'pointer',
+                            opacity: statusSavingId === item.id ? 0.6 : 1,
+                          }}
+                        >
+                          {STATUS_ORDER.map((status) => (
+                            <option key={status} value={status}>
+                              {STATUS_META[status].emoji} {STATUS_META[status].label}
+                            </option>
+                          ))}
+                        </select>
+                        {statusSavingId === item.id && (
+                          <span style={{ fontSize: 10, color: 'var(--c-text-light)' }}>…</span>
+                        )}
                       </div>
                       <div style={{ display: 'flex', gap: 5, marginTop: 6 }}>
                         <input

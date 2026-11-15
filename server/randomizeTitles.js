@@ -1,9 +1,9 @@
 const MACHINE_CATEGORIES = ['anime', 'movie', 'series']
 
-export function randomizeActiveAssignments(items, capacity = 30, random = Math.random) {
+export function randomizeActiveAssignments(items, capacity = 30, random = Math.random, categories = MACHINE_CATEGORIES) {
   const selectedIds = new Set()
 
-  for (const category of MACHINE_CATEGORIES) {
+  for (const category of categories) {
     const categoryItems = items.filter((item) => item.category === category)
     for (let index = categoryItems.length - 1; index > 0; index--) {
       const swapIndex = Math.floor(random() * (index + 1))

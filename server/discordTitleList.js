@@ -7,6 +7,7 @@ const CATEGORY_LABELS = {
 const STATUS_LABELS = {
   IN_MACHINE: 'En máquina',
   PENDING: 'En cola',
+  WATCHING: 'Viendo',
   WATCHED: 'Visto',
 }
 const MAX_TITLE_LENGTH = 130

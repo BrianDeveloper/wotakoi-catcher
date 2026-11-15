@@ -9,6 +9,7 @@ import {
 } from '../../lib/api'
 import type { DiscordWebhookPayload, NotificationTemplateSettings } from '../../lib/api'
 import { STATE_COLORS } from '../../constants/theme'
+import { MachineAdminActions } from './MachineAdminActions'
 import type { CSSProperties } from 'react'
 
 const buttonStyle: CSSProperties = {
@@ -48,7 +49,6 @@ export function AdminControls() {
     resetting,
     reshuffling,
     handleAdminReset,
-    handleAdminReshuffle,
     syncDiscord,
     syncing,
     lastSyncAdded,
@@ -197,20 +197,6 @@ export function AdminControls() {
               {resetting ? 'Reseteando…' : '↻ Resetear máquina'}
             </button>
             <button
-              onClick={async () => {
-                const result = await handleAdminReshuffle(adminKey)
-                if (result) {
-                  setNotice(`Sorteo actualizado: ${result.selected} títulos en máquinas y ${result.pending} pendientes. Los consumidos se conservaron.`)
-                  setError(null)
-                }
-              }}
-              disabled={disabled}
-              title="Volver a sortear las obras activas entre las máquinas"
-              style={{ ...buttonStyle, opacity: disabled ? 0.6 : 1 }}
-            >
-              {reshuffling ? 'Sorteando…' : '🎲 Sortear máquinas'}
-            </button>
-            <button
               onClick={() => syncDiscord(adminKey)}
               disabled={disabled}
               title="Importar títulos del canal de sugerencias"
@@ -232,6 +218,8 @@ export function AdminControls() {
               {webhookEnabled ? '🔔 Avisos ON' : '🔕 Avisos OFF'}
             </button>
           </div>
+
+          <MachineAdminActions adminKey={adminKey} disabled={disabled} />
 
           <button
             onClick={() => setTemplatesOpen((open) => !open)}

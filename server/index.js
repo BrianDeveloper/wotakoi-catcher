@@ -22,7 +22,10 @@ import {
   getPendingOldestByCategory,
   getAllTitles,
   setStatus,
-  setConsumed,
+  markWatching,
+  updateTitleStatus,
+  clearMachine,
+  TITLE_STATUSES,
   getWatchHistoryWithStats,
   getWatchStatsById,
   getRatingsForMedia,
@@ -73,11 +76,13 @@ app.post('/api/discord/interactions', express.raw({ type: 'application/json', li
 
   const commandName = interaction.data?.name
   const isSlashCommand = interaction.type === 2
-    && ['sugerir', 'titulos', 'calificar', 'ranking'].includes(commandName)
+    && ['sugerir', 'titulos', 'calificar', 'ranking', 'ayuda'].includes(commandName)
   const isRatingAutocomplete = interaction.type === 4 && commandName === 'calificar'
   const isTitlePageButton = interaction.type === 3
     && /^titles:(all|anime|movie|series):\d+$/.test(interaction.data?.custom_id || '')
-  if ((!isSlashCommand && !isTitlePageButton && !isRatingAutocomplete) || typeof interaction.token !== 'string') {
+  const isRankingPageButton = interaction.type === 3
+    && /^ranking:(all|anime|movie|series):\d+$/.test(interaction.data?.custom_id || '')
+  if ((!isSlashCommand && !isTitlePageButton && !isRankingPageButton && !isRatingAutocomplete) || typeof interaction.token !== 'string') {
     return res.status(400).json({ error: 'Interacción no compatible.' })
   }
 
@@ -296,11 +301,46 @@ app.patch('/api/admin/titles/:id/correction', isAdmin, async (req, res) => {
   }
 })
 
-app.post('/api/admin/titles/reshuffle', isAdmin, async (_req, res) => {
+app.post('/api/admin/titles/reshuffle', isAdmin, async (req, res) => {
+  const raw = String(req.body?.category || 'mix').toLowerCase()
+  if (raw !== 'mix' && !CATEGORIES.includes(raw)) {
+    return res.status(400).json({ error: 'category debe ser anime, movie, series o mix' })
+  }
+  const category = raw === 'mix' ? null : raw
   try {
-    const { data, error } = await reshuffleActiveTitles(MACHINE_SIZE)
+    const { data, error } = await reshuffleActiveTitles(MACHINE_SIZE, category)
     if (error) return res.status(500).json({ error: error.message })
-    res.json({ ok: true, ...data, preservedWatched: true })
+    res.json({ ok: true, ...data, category: raw, preservedWatched: true })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+app.patch('/api/admin/titles/:id/status', isAdmin, async (req, res) => {
+  const status = String(req.body?.status || '').toUpperCase()
+  if (!TITLE_STATUSES.includes(status)) {
+    return res.status(400).json({ error: `status debe ser uno de: ${TITLE_STATUSES.join(', ')}` })
+  }
+  try {
+    const { data, error } = await updateTitleStatus(req.params.id, status)
+    if (error) return res.status(500).json({ error: error.message })
+    if (!data) return res.status(404).json({ error: 'El título no existe.' })
+    res.json({ ok: true, title: data })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+app.post('/api/admin/machines/clear', isAdmin, async (req, res) => {
+  const raw = String(req.body?.category || 'mix').toLowerCase()
+  if (raw !== 'mix' && !CATEGORIES.includes(raw)) {
+    return res.status(400).json({ error: 'category debe ser anime, movie, series o mix' })
+  }
+  const category = raw === 'mix' ? null : raw
+  try {
+    const { data, error } = await clearMachine(category)
+    if (error) return res.status(500).json({ error: error.message })
+    res.json({ ok: true, category: raw, ...data })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
@@ -313,7 +353,7 @@ app.patch('/api/capsules/:id/consume', async (req, res) => {
     if (getErr) return res.status(500).json({ error: getErr.message })
     if (!consumed) return res.status(404).json({ error: 'Cápsula no encontrada' })
 
-    const { error: updErr } = await setConsumed([id])
+    const { error: updErr } = await markWatching([id])
     if (updErr) return res.status(500).json({ error: updErr.message })
 
     // Notificar por webhook de Discord (no-bloqueante; si falla no rompe la respuesta)
@@ -327,7 +367,7 @@ app.patch('/api/capsules/:id/consume', async (req, res) => {
       sendDiscordWebhookNotification({
         ...consumed,
         category: consumed.category || null,
-        status: 'WATCHED',
+        status: 'WATCHING',
       }, notificationSettings).catch((err) => console.error('[webhook] error inesperado:', err.message))
     }
 
@@ -343,7 +383,7 @@ app.patch('/api/capsules/:id/consume', async (req, res) => {
       next = { ...pending[0], status: 'IN_MACHINE' }
     }
 
-    res.json({ consumed: { ...consumed, status: 'WATCHED' }, next })
+    res.json({ consumed: { ...consumed, status: 'WATCHING' }, next })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
