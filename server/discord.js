@@ -305,11 +305,12 @@ async function createRankingMessage(interaction) {
   const requestedPage = Math.max(1, request.page)
   const restOffset = MEDALS.length + (requestedPage - 1) * RANKING_PAGE_SIZE
 
-  const podiumResult = await getRankingsPage(category, 0, MEDALS.length)
+  const [podiumResult, restResult] = await Promise.all([
+    getRankingsPage(category, 0, MEDALS.length),
+    getRankingsPage(category, restOffset, RANKING_PAGE_SIZE),
+  ])
   const total = podiumResult.count || 0
   const restCount = Math.max(0, total - MEDALS.length)
-  const restLimit = Math.min(RANKING_PAGE_SIZE, restCount)
-  const restResult = await getRankingsPage(category, restOffset, restLimit)
   const queryError = podiumResult.error || restResult.error
   if (queryError) {
     console.error('[discord] Error al consultar el ranking:', queryError.message || queryError)
