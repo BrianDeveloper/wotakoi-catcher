@@ -112,7 +112,10 @@ export async function sendDiscordWebhookNotification(mediaItem, settings = DEFAU
   const payload = buildWebhookPayload(mediaItem, settings)
   const response = await fetch(config.discordWebhookUrl, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'User-Agent': 'DiscordBot (https://github.com/BrianDeveloper/wotakoi-catcher, 1.0)',
+    },
     body: JSON.stringify(payload),
     signal: AbortSignal.timeout(10000),
   })

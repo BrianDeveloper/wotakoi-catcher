@@ -2,104 +2,74 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { patchOriginalInteractionResponse } from './discordInteractionResponse.js'
 
-function okResponse() {
-  return { ok: true, status: 200, statusText: 'OK' }
-}
-
-function rateLimitedResponse(retryAfter = 0.25) {
-  return {
-    ok: false,
-    status: 429,
-    statusText: 'Too Many Requests',
-    headers: { get: () => null },
-    text: async () => JSON.stringify({
-      message: 'You are being rate limited.',
-      retry_after: retryAfter,
-      global: false,
-    }),
-  }
-}
-
-test('actualiza la respuesta original sin reintentos cuando Discord acepta', async () => {
+test('edita la respuesta original con el cliente REST de discord.js', async () => {
   const calls = []
+  const rest = {
+    patch: async (route, options) => {
+      calls.push({ route, options })
+      return { id: 'message-1' }
+    },
+  }
+
   const result = await patchOriginalInteractionResponse({
     applicationId: 'app',
     token: 'token',
     response: { content: 'ok' },
-    fetchImpl: async (url, options) => {
-      calls.push({ url, options })
-      return okResponse()
-    },
+    authToken: 'bot-token',
+    rest,
   })
 
-  assert.equal(result.status, 200)
+  assert.deepEqual(result, { id: 'message-1' })
   assert.equal(calls.length, 1)
-  assert.equal(calls[0].url, 'https://discord.com/api/v10/webhooks/app/token/messages/@original')
-  assert.equal(calls[0].options.method, 'PATCH')
-  assert.equal(calls[0].options.body, JSON.stringify({ content: 'ok' }))
+  assert.equal(calls[0].route, '/webhooks/app/token/messages/%40original')
+  assert.equal(calls[0].options.auth, true)
+  assert.deepEqual(calls[0].options.body, { content: 'ok' })
 })
 
-test('reintenta respetando retry_after cuando Discord responde 429', async () => {
-  const waits = []
-  let attempts = 0
-  const result = await patchOriginalInteractionResponse({
-    applicationId: 'app',
-    token: 'token',
-    response: { content: 'ok' },
-    fetchImpl: async () => {
-      attempts += 1
-      return attempts === 1 ? rateLimitedResponse(0.25) : okResponse()
+test('envía la petición sin autenticación cuando no hay token del bot', async () => {
+  const calls = []
+  const rest = {
+    patch: async (route, options) => {
+      calls.push({ route, options })
+      return { id: 'message-1' }
     },
-    sleep: async (ms) => { waits.push(ms) },
-  })
+  }
 
-  assert.equal(result.status, 200)
-  assert.equal(attempts, 2)
-  assert.deepEqual(waits, [250])
-})
-
-test('usa el header Retry-After cuando está presente', async () => {
-  const waits = []
-  let attempts = 0
   await patchOriginalInteractionResponse({
     applicationId: 'app',
     token: 'token',
     response: { content: 'ok' },
-    fetchImpl: async () => {
-      attempts += 1
-      if (attempts > 1) return okResponse()
-      return {
-        ...rateLimitedResponse(5),
-        headers: { get: (name) => (name.toLowerCase() === 'retry-after' ? '0.5' : null) },
-      }
-    },
-    sleep: async (ms) => { waits.push(ms) },
+    rest,
   })
 
-  assert.deepEqual(waits, [500])
+  assert.equal(calls[0].options.auth, false)
 })
 
-test('falla con el detalle de Discord tras agotar los reintentos', async () => {
-  let attempts = 0
+test('rechaza interacciones sin application id o token', async () => {
+  await assert.rejects(
+    patchOriginalInteractionResponse({ token: 'token', response: {}, rest: {} }),
+    /application id/,
+  )
+  await assert.rejects(
+    patchOriginalInteractionResponse({ applicationId: 'app', response: {}, rest: {} }),
+    /token/,
+  )
+})
+
+test('propaga el error del cliente REST', async () => {
+  const rest = {
+    patch: async () => {
+      throw new Error('Discord no aceptó la respuesta: 429 Too Many Requests')
+    },
+  }
+
   await assert.rejects(
     patchOriginalInteractionResponse({
       applicationId: 'app',
       token: 'token',
       response: { content: 'ok' },
-      fetchImpl: async () => {
-        attempts += 1
-        return rateLimitedResponse(0)
-      },
-      sleep: async () => {},
+      rest,
     }),
-    /429 Too Many Requests.*rate limited/,
-  )
-  assert.equal(attempts, 5)
-})
-
-test('rechaza interacciones sin application id o token', async () => {
-  await assert.rejects(
-    patchOriginalInteractionResponse({ token: 'token', response: {} }),
-    /application id/,
+    /429 Too Many Requests/,
   )
 })

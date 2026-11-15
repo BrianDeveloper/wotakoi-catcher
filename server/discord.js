@@ -332,5 +332,6 @@ export async function completeDiscordInteraction(interaction) {
     applicationId: interaction.application_id || config.discordClientId,
     token: interaction.token,
     response,
+    authToken: config.discordToken,
   })
 }
