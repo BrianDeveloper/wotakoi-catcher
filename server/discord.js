@@ -24,7 +24,6 @@ import {
 import { getSuggestionMeta } from './jikan.js'
 import { extractSuggestionEntries } from './suggestionParser.js'
 import { createTitleListResponse, TITLE_LIST_PAGE_SIZE } from './discordTitleList.js'
-import { patchOriginalInteractionResponse } from './discordInteractionResponse.js'
 
 const CATEGORY_META = {
   anime: { emoji: '🍥', label: 'Anime' },
@@ -307,31 +306,29 @@ async function createRankingMessage(interaction) {
   return buildRankingResponse({ titles: data || [], category })
 }
 
-export async function completeDiscordInteraction(interaction) {
+export async function buildDiscordInteractionResponse(interaction) {
   const commandName = interaction.data?.name
-  let response
-  try {
-    if (interaction.type === 3 || commandName === 'titulos') {
-      response = await createTitleListMessage(interaction)
-    } else if (commandName === 'calificar') {
-      response = await createRatingResponse(interaction)
-    } else if (commandName === 'ranking') {
-      response = await createRankingMessage(interaction)
-    } else {
-      response = await createSuggestionResponse(interaction)
-    }
-  } catch (error) {
-    console.error('[discord] Error al procesar la interacción:', error)
-    response = {
-      content: '❌ No se pudo procesar el comando. Inténtalo de nuevo más tarde.',
-      allowed_mentions: { parse: [] },
-    }
+
+  if (interaction.type === 3) {
+    const data = await createTitleListMessage(interaction)
+    return { type: 7, data }
   }
 
-  return patchOriginalInteractionResponse({
-    applicationId: interaction.application_id || config.discordClientId,
-    token: interaction.token,
-    response,
-    authToken: config.discordToken,
-  })
+  if (commandName === 'titulos') {
+    const data = await createTitleListMessage(interaction)
+    return { type: 4, data: { ...data, flags: 64 } }
+  }
+
+  if (commandName === 'calificar') {
+    const data = await createRatingResponse(interaction)
+    return { type: 4, data: { ...data, flags: 64 } }
+  }
+
+  if (commandName === 'ranking') {
+    const data = await createRankingMessage(interaction)
+    return { type: 4, data }
+  }
+
+  const data = await createSuggestionResponse(interaction)
+  return { type: 4, data }
 }

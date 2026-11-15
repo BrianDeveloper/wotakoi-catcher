@@ -15,7 +15,7 @@
 3. Con la API accesible, configura **Interactions Endpoint URL** como `https://TU-DOMINIO/api/discord/interactions`. Discord valida la URL enviando un `PING`; el backend verifica la firma Ed25519 y responde `PONG`.
 4. Registra los comandos del servidor desde el proyecto: `npm run register:discord`. Vuelve a ejecutar este comando cuando agregues o modifiques comandos.
 
-El endpoint valida la firma con el cuerpo HTTP original y rechaza solicitudes con firma inválida o timestamp vencido. `/sugerir` confirma la interacción de inmediato y completa la respuesta después de guardar la obra. No compartas `DISCORD_TOKEN` ni la clave de servicio de Supabase.
+El endpoint valida la firma con el cuerpo HTTP original y rechaza solicitudes con firma inválida o timestamp vencido. Cada comando procesa la obra y responde en la misma petición HTTP (sin llamadas salientes a Discord), por lo que la respuesta no depende de la disponibilidad de `discord.com` desde el host. No compartas `DISCORD_TOKEN` ni la clave de servicio de Supabase.
 
 ## Despliegue y costos
 

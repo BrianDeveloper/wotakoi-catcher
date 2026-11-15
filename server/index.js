@@ -2,7 +2,7 @@ import express from 'express'
 import cron from 'node-cron'
 import { timingSafeEqual } from 'node:crypto'
 import config from './config.js'
-import { completeDiscordInteraction } from './discord.js'
+import { buildDiscordInteractionResponse } from './discord.js'
 import { verifyDiscordRequest } from './discordInteractions.js'
 import { getTitles } from './discordSuggestions.js'
 import { buildAutocompleteResponse, getFocusedOption } from './discordRatings.js'
@@ -92,15 +92,20 @@ app.post('/api/discord/interactions', express.raw({ type: 'application/json', li
     }
   }
 
-  if (isTitlePageButton) {
-    res.json({ type: 6 })
-  } else if (['titulos', 'calificar'].includes(commandName)) {
-    res.json({ type: 5, data: { flags: 64 } })
-  } else {
-    res.json({ type: 5 })
+  let callback
+  try {
+    callback = await buildDiscordInteractionResponse(interaction)
+  } catch (error) {
+    console.error('[discord] No se pudo completar la interacción:', error.message)
+    callback = {
+      type: 4,
+      data: {
+        content: '❌ No se pudo procesar el comando. Inténtalo de nuevo más tarde.',
+        flags: 64,
+      },
+    }
   }
-  void completeDiscordInteraction(interaction)
-    .catch((error) => console.error('[discord] No se pudo completar la interacción:', error.message))
+  return res.json(callback)
 })
 
 app.use(express.json())
