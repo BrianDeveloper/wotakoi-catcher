@@ -77,9 +77,6 @@ export function MachineHeader() {
       </>
     )
     titleShadow = '2px 2px 0 #000, 3px 3px 0 #000'
-  } else if (t.marqueeVariant === 'glitch') {
-    decor = <span style={{ color: '#f0abfc', fontWeight: 900, textShadow: ink }}>//</span>
-    titleShadow = '2px 0 0 rgba(244,114,182,0.8), -2px 0 0 rgba(34,211,238,0.8)'
   }
 
   const title = (
@@ -121,15 +118,6 @@ export function MachineHeader() {
         }}>
           ● REC
         </span>
-      )}
-      {t.marqueeVariant === 'glitch' && (
-        <span className="glitch-border-anim" style={{
-          position: 'absolute',
-          inset: 0,
-          border: '2px solid rgba(34, 211, 238, 0.8)',
-          borderRadius: 10,
-          pointerEvents: 'none',
-        }} />
       )}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '30%' }}>{decor}</div>

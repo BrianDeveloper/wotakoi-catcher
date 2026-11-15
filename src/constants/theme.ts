@@ -40,7 +40,6 @@ export const SURFACES = {
   capsuleBottomEdge: 'rgba(0,0,0,0.1)',
   cardBg: 'rgba(255,255,255,0.05)',
   cardBorder: 'rgba(255,255,255,0.12)',
-  mixBadgeBg: '#0f0a18',
   lightboxBg: 'rgba(0,0,0,0.9)',
   glassWash: 'rgba(255,255,255,0.1)',
   coverBadgeBg: 'rgba(0,0,0,0.6)',
@@ -57,5 +56,6 @@ export const SHADOWS = {
 // Colores de feedback / estados
 export const STATE_COLORS = {
   error: '#f87171',
+  success: '#4ade80',
   white: '#ffffff',
 }

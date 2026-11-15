@@ -302,26 +302,33 @@ async function createRankingMessage(interaction) {
   if (!request) return { content: '⚠️ No se pudo interpretar la página del ranking.' }
 
   const { category } = request
-  const podiumResult = await getRankingsPage(category, 0, MEDALS.length)
-  if (podiumResult.error) {
-    console.error('[discord] Error al consultar el ranking:', podiumResult.error.message || podiumResult.error)
+  const requestedPage = Math.max(1, request.page)
+  const restOffset = MEDALS.length + (requestedPage - 1) * RANKING_PAGE_SIZE
+
+  const [podiumResult, restResult] = await Promise.all([
+    getRankingsPage(category, 0, MEDALS.length),
+    getRankingsPage(category, restOffset, RANKING_PAGE_SIZE),
+  ])
+  const queryError = podiumResult.error || restResult.error
+  if (queryError) {
+    console.error('[discord] Error al consultar el ranking:', queryError.message || queryError)
     return { content: '❌ No se pudo consultar el ranking. Inténtalo más tarde.' }
   }
 
   const total = podiumResult.count || 0
   const restCount = Math.max(0, total - MEDALS.length)
   const pageCount = Math.max(1, Math.ceil(restCount / RANKING_PAGE_SIZE))
-  const page = Math.min(Math.max(1, request.page), pageCount)
+  const page = Math.min(requestedPage, pageCount)
 
-  let rest = []
-  if (restCount > 0) {
+  let rest = restResult.data || []
+  if (page !== requestedPage && restCount > 0) {
     const offset = MEDALS.length + (page - 1) * RANKING_PAGE_SIZE
-    const restResult = await getRankingsPage(category, offset, RANKING_PAGE_SIZE)
-    if (restResult.error) {
-      console.error('[discord] Error al consultar el ranking:', restResult.error.message || restResult.error)
+    const retry = await getRankingsPage(category, offset, RANKING_PAGE_SIZE)
+    if (retry.error) {
+      console.error('[discord] Error al consultar el ranking:', retry.error.message || retry.error)
       return { content: '❌ No se pudo consultar el ranking. Inténtalo más tarde.' }
     }
-    rest = restResult.data || []
+    rest = retry.data || []
   }
 
   return buildRankingResponse({

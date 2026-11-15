@@ -1,9 +1,8 @@
 import { useState } from 'react'
 import type { CSSProperties } from 'react'
 import { useClawMachine } from '../../context/ClawMachineContext'
-import { MACHINES } from '../../constants/machineThemes'
 import { STATE_COLORS } from '../../constants/theme'
-import type { MachineKey } from '../../types'
+import type { MachineTarget } from '../../types'
 
 const buttonStyle: CSSProperties = {
   background: 'var(--c-machine-dark)',
@@ -27,26 +26,27 @@ const fieldStyle: CSSProperties = {
   fontWeight: 700,
 }
 
-const CLEAR_TARGETS: { key: MachineKey; label: string }[] = [
+const CLEAR_TARGETS: { key: MachineTarget; label: string }[] = [
   { key: 'anime', label: '🍥 Anime' },
   { key: 'movie', label: '🎬 Pelis' },
   { key: 'series', label: '📺 Series' },
+  { key: 'all', label: '🧹 Todas' },
 ]
 
 export function MachineAdminActions({ adminKey, disabled }: { adminKey: string; disabled: boolean }) {
   const { clearing, reshuffling, handleClearMachine, handleAdminReshuffle } = useClawMachine()
-  const [reroll, setReroll] = useState<MachineKey>('mix')
+  const [reroll, setReroll] = useState<'anime' | 'movie' | 'series' | 'all'>('anime')
   const [notice, setNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const busy = disabled || clearing !== null || reshuffling
 
-  const clear = async (category: MachineKey) => {
+  const clear = async (category: MachineTarget) => {
     setNotice(null)
     setError(null)
     const result = await handleClearMachine(adminKey, category)
     if (result) {
-      const scope = category === 'mix' ? 'todas las máquinas' : `la máquina ${category}`
+      const scope = category === 'all' ? 'todas las máquinas' : `la máquina ${category}`
       setNotice(`Se devolvieron ${result.cleared} título(s) a la cola al vaciar ${scope}.`)
     }
   }
@@ -56,7 +56,7 @@ export function MachineAdminActions({ adminKey, disabled }: { adminKey: string; 
     setError(null)
     const result = await handleAdminReshuffle(adminKey, reroll)
     if (result) {
-      const scope = reroll === 'mix' ? 'todas las máquinas' : `la máquina ${reroll}`
+      const scope = reroll === 'all' ? 'todas las máquinas' : `la máquina ${reroll}`
       setNotice(`Sorteo de ${scope}: ${result.selected} títulos en máquinas y ${result.pending} pendientes.`)
     }
   }
@@ -87,19 +87,6 @@ export function MachineAdminActions({ adminKey, disabled }: { adminKey: string; 
             {clearing === target.key ? 'Vaciando…' : target.label}
           </button>
         ))}
-        <button
-          onClick={() => void clear('mix')}
-          disabled={busy}
-          title="Vaciar todas las máquinas"
-          style={{
-            ...buttonStyle,
-            borderColor: STATE_COLORS.error,
-            color: STATE_COLORS.error,
-            opacity: busy ? 0.6 : 1,
-          }}
-        >
-          {clearing === 'mix' ? 'Vaciando…' : '🧹 Vaciar Todas'}
-        </button>
       </div>
 
       <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--c-text-light)', marginTop: 4 }}>
@@ -109,15 +96,14 @@ export function MachineAdminActions({ adminKey, disabled }: { adminKey: string; 
         <select
           aria-label="Máquina a sortear"
           value={reroll}
-          onChange={(event) => setReroll(event.target.value as MachineKey)}
+          onChange={(event) => setReroll(event.target.value as 'anime' | 'movie' | 'series' | 'all')}
           disabled={busy}
           style={{ ...fieldStyle, flex: 1, minWidth: 150 }}
         >
-          {MACHINES.map((machine) => (
-            <option key={machine.key} value={machine.key}>
-              {machine.emoji} {machine.label}
-            </option>
-          ))}
+          <option value="anime">🍥 Anime</option>
+          <option value="movie">🎬 Pelis</option>
+          <option value="series">📺 Series</option>
+          <option value="all">🧹 Todas</option>
         </select>
         <button onClick={() => void sortear()} disabled={busy} style={{ ...buttonStyle, opacity: busy ? 0.6 : 1 }}>
           {reshuffling ? 'Sorteando…' : '🎲 Sortear'}

@@ -43,25 +43,10 @@ export const MACHINES: MachineDef[] = [
       controlsAccent: '#f77f00',
     },
   },
-  {
-    key: 'mix', label: 'Máquina Mix', short: 'MIX', emoji: '👾',
-    accent: '#22d3ee', main: '#3b0764', dark: '#1e1b4b', light: '#9333ea',
-    theme: {
-      marqueeVariant: 'glitch',
-      marqueeBg: '#150a26',
-      marqueeText: '#f8fafc',
-      marqueeAccent: '#22d3ee',
-      cabinetBg: '#150a26',
-      domeEffect: 'glitchbars',
-      domeBg: '#0f0a18',
-      controlsAccent: '#e879f9',
-    },
-  },
 ]
 
 export const MACHINE_QUERY_PARAM: Record<MachineKey, string> = {
   anime: 'anime',
   movie: 'movie',
   series: 'series',
-  mix: 'mix',
 }

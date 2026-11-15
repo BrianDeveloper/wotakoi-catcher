@@ -37,7 +37,7 @@ En los controles administrativos de la aplicación, introduce `ADMIN_SECRET_KEY`
 
 Desde la biblioteca, la administración conectada puede cambiar el estado de cada título con un desplegable (En cola, En máquina, Viendo, Visto) y eliminar títulos. El borrado es permanente e incluye el registro del historial.
 
-El panel administrativo permite **vaciar** una máquina (Anime, Pelis, Series o Todas) devolviendo sus títulos a `PENDING`, y **sortear** una máquina concreta para cargar 30 pendientes al azar (Mix sortea todas las máquinas, hasta 30 por categoría). Los títulos `WATCHING` y `WATCHED` no se modifican al sortear o vaciar.
+El panel administrativo permite **vaciar** una máquina (Anime, Pelis, Series o Todas) devolviendo sus títulos a `PENDING`, y **sortear** una máquina concreta para cargar 30 pendientes al azar (las 3 máquinas principales). Los títulos `WATCHING` y `WATCHED` no se modifican al sortear o vaciar.
 
 Flujo de estados: `PENDING` (en cola) → `IN_MACHINE` (en máquina) → `WATCHING` (viendo / próxima a ver) → `WATCHED` (vista). Al sacar una obra de la máquina pasa a `WATCHING`; al marcarla manualmente como `WATCHED` se registra la fecha de visionado y solo entonces se puede calificar.
 

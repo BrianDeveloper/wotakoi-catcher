@@ -58,13 +58,15 @@ export interface SubmitRatingResult {
   updated: boolean
 }
 
-export type MachineKey = 'anime' | 'movie' | 'series' | 'mix'
+export type MachineKey = 'anime' | 'movie' | 'series'
+
+export type MachineTarget = MachineKey | 'all'
 
 export type TitleStatus = 'PENDING' | 'IN_MACHINE' | 'WATCHING' | 'WATCHED'
 
-export type MarqueeVariant = 'manga' | 'broadway' | 'tv' | 'glitch'
+export type MarqueeVariant = 'manga' | 'broadway' | 'tv'
 
-export type DomeEffect = 'scanlines' | 'glitchbars' | 'none'
+export type DomeEffect = 'scanlines' | 'none'
 
 export interface MachineTheme {
   marqueeVariant: MarqueeVariant

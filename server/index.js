@@ -44,7 +44,7 @@ import {
 } from './supabase.js'
 
 const MACHINE_SIZE = 30
-const CATEGORIES = ['anime', 'movie', 'series']
+const CATEGORIES = ['anime', 'movie', 'series', 'all']
 
 const app = express()
 app.use((req, res, next) => {
@@ -221,25 +221,19 @@ async function fillCurrent(category) {
 app.get('/api/machine/capsules', async (req, res) => {
   try {
     const raw = String(req.query.category || '').toLowerCase()
-    const category = CATEGORIES.includes(raw) ? raw : null
-    const { data, error } = await fillCurrent(category)
-    if (error) return res.status(500).json({ error })
-    res.json({ capsules: data, category: category || 'mix' })
+    if (!CATEGORIES.includes(raw)) {
+      return res.status(400).json({ error: 'category debe ser anime, movie, series o todas' })
+    }
+    const category = raw === 'all' ? null : raw
+    const { data, error } = await getByStatusCategory('IN_MACHINE', category)
+    if (error) return res.status(500).json({ error: error.message })
+    res.json({ capsules: data, category })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
 })
 
-// Alias sin filtro (Mix) para compatibilidad
-app.get('/api/capsules', async (req, res) => {
-  try {
-    const { data, error } = await fillCurrent(null)
-    if (error) return res.status(500).json({ error })
-    res.json({ capsules: data, category: 'mix' })
-  } catch (err) {
-    res.status(500).json({ error: err.message })
-  }
-})
+} // fin de las rutas de máquina
 
 app.get('/api/titles', async (req, res) => {
   try {
@@ -302,11 +296,11 @@ app.patch('/api/admin/titles/:id/correction', isAdmin, async (req, res) => {
 })
 
 app.post('/api/admin/titles/reshuffle', isAdmin, async (req, res) => {
-  const raw = String(req.body?.category || 'mix').toLowerCase()
-  if (raw !== 'mix' && !CATEGORIES.includes(raw)) {
-    return res.status(400).json({ error: 'category debe ser anime, movie, series o mix' })
+  const raw = String(req.body?.category || '').toLowerCase()
+  if (raw !== 'all' && !CATEGORIES.slice(0, 3).includes(raw)) {
+    return res.status(400).json({ error: 'category debe ser anime, movie, series o todas' })
   }
-  const category = raw === 'mix' ? null : raw
+  const category = raw === 'all' ? null : raw
   try {
     const { data, error } = await reshuffleActiveTitles(MACHINE_SIZE, category)
     if (error) return res.status(500).json({ error: error.message })
@@ -332,15 +326,28 @@ app.patch('/api/admin/titles/:id/status', isAdmin, async (req, res) => {
 })
 
 app.post('/api/admin/machines/clear', isAdmin, async (req, res) => {
-  const raw = String(req.body?.category || 'mix').toLowerCase()
-  if (raw !== 'mix' && !CATEGORIES.includes(raw)) {
-    return res.status(400).json({ error: 'category debe ser anime, movie, series o mix' })
+  const raw = String(req.body?.category || '').toLowerCase()
+  if (raw !== 'all' && !CATEGORIES.slice(0, 3).includes(raw)) {
+    return res.status(400).json({ error: 'category debe ser anime, movie, series o todas' })
   }
-  const category = raw === 'mix' ? null : raw
+  const category = raw === 'all' ? null : raw
   try {
     const { data, error } = await clearMachine(category)
     if (error) return res.status(500).json({ error: error.message })
     res.json({ ok: true, category: raw, ...data })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+app.post('/api/admin/machines/mix', isAdmin, async (req, res) => {
+  if (typeof req.body?.enabled !== 'boolean') {
+    return res.status(400).json({ error: 'El campo enabled debe ser booleano' })
+  }
+  try {
+    const { error } = await setMixMachineEnabled(req.body.enabled)
+    if (error) return res.status(500).json({ error: error.message })
+    res.json({ ok: true, enabled: req.body.enabled })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
@@ -407,7 +414,7 @@ app.get('/api/rankings', async (req, res) => {
     const limit = Math.min(Math.max(Number(req.query.limit) || 10, 1), 50)
     const { data, error } = await getRankings(category, limit)
     if (error) return res.status(500).json({ error: error.message })
-    res.json({ rankings: data, category: category || 'mix' })
+    res.json({ rankings: data, category: category || 'all' })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }

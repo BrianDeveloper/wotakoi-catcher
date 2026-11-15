@@ -2,6 +2,7 @@ import { MACHINE_QUERY_PARAM } from '../constants/machineThemes'
 import type {
   AnimeEntry,
   MachineKey,
+  MachineTarget,
   RankedTitle,
   RatingDetail,
   SubmitRatingResult,
@@ -82,7 +83,7 @@ export async function fetchHistory(): Promise<AnimeEntry[]> {
 
 export async function fetchRankings(category?: MachineKey | null, limit = 10): Promise<RankedTitle[]> {
   const params = new URLSearchParams({ limit: String(limit) })
-  if (category && category !== 'mix') params.set('category', category)
+  if (category) params.set('category', category)
   const res = await fetch(`${RANKINGS_URL}?${params.toString()}`)
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   const data = await res.json()
@@ -123,9 +124,7 @@ export async function submitRating({
 }
 
 export async function fetchTitles(category?: MachineKey | null): Promise<AnimeEntry[]> {
-  const url = category && category !== 'mix'
-    ? `${TITLES_URL}?category=${category}`
-    : TITLES_URL
+  const url = category ? `${TITLES_URL}?category=${category}` : TITLES_URL
   const res = await fetch(url)
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   const data = await res.json()
@@ -168,7 +167,7 @@ export async function correctTitle(
 
 export async function reshuffleMachine(
   adminKey: string,
-  category: MachineKey = 'mix',
+  category: MachineTarget,
 ): Promise<ReshuffleResult> {
   return adminRequest<ReshuffleResult>(`${ADMIN_TITLES_URL}/reshuffle`, adminKey, {
     method: 'POST',
@@ -189,7 +188,7 @@ export async function setTitleStatus(
 
 export async function clearMachine(
   adminKey: string,
-  category: MachineKey = 'mix',
+  category: MachineTarget,
 ): Promise<ClearMachineResult> {
   return adminRequest<ClearMachineResult>(`${ADMIN_MACHINES_URL}/clear`, adminKey, {
     method: 'POST',
