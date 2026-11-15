@@ -228,12 +228,10 @@ app.get('/api/machine/capsules', async (req, res) => {
     const { data, error } = await getByStatusCategory('IN_MACHINE', category)
     if (error) return res.status(500).json({ error: error.message })
     res.json({ capsules: data, category })
-  } catch (err) {
+} catch (err) {
     res.status(500).json({ error: err.message })
   }
 })
-
-} // fin de las rutas de máquina
 
 app.get('/api/titles', async (req, res) => {
   try {
